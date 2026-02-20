@@ -1,0 +1,50 @@
+# TODO
+
+## 1. Local MVP Test
+
+Get the full stack running locally to validate the end-to-end flow before touching a server.
+
+### Adjustments needed for local running
+- [ ] Add a `docker-compose.override.yml` for local use: skip certbot, serve nginx on HTTP only (no TLS), and remove the HTTPS server block (or use a self-signed cert)
+- [ ] Confirm the `moul/icecast` image actually accepts the env-variable-style config in `icecast.xml` — it may need a different base image or a startup script to substitute values
+
+### Smoke test checklist
+- [ ] `docker compose up --build` completes without errors
+- [ ] Icecast status page responds at `http://localhost:8000/status-json.xsl`
+- [ ] Liquidsoap connects to Icecast (check `docker compose logs liquidsoap`)
+- [ ] Web UI loads at `http://localhost` (or whichever port nginx is on locally)
+- [ ] Submit a YouTube link → track appears in library as `pending`
+- [ ] Track transitions to `ready` within a few minutes
+- [ ] `GET /api/status` shows the track as now-playing after Liquidsoap picks it up
+- [ ] VLC can connect to `http://localhost:8000/radio` and plays audio
+- [ ] ICY metadata (artist/title) shows in VLC's Media Information window
+- [ ] Admin page: switch mode to Mood, verify next track changes without a restart
+- [ ] Admin page: skip button advances to the next track
+- [ ] Submit a Spotify link → fails gracefully with a warning message (don't fix spotdl, just confirm the error handling works)
+
+---
+
+## 2. AWS Deployment
+
+After the local test passes, deploy to a single EC2 instance.
+
+### Infrastructure decisions to make
+- [ ] Choose instance type (t3.small is probably enough; t3.medium if librosa analysis feels slow)
+- [ ] Decide on storage: default EBS root volume is fine for the DB; add a separate EBS volume for `/media` so it survives instance replacement
+- [ ] Pick a domain and set up Route 53 (or point an existing domain's A record at the instance IP)
+- [ ] Decide whether to use an Elastic IP (recommended so the IP doesn't change on restart)
+
+### Deployment steps
+- [ ] Launch EC2 instance (Ubuntu 24.04 LTS), install Docker + Docker Compose plugin
+- [ ] Open security group ports: 22 (SSH), 80 (HTTP), 443 (HTTPS), 8000 (Icecast stream)
+- [ ] Clone repo to instance, copy `.env.example` → `.env`, fill in real secrets
+- [ ] Generate `.htpasswd`: `htpasswd -cb nginx/.htpasswd family PASSPHRASE`
+- [ ] `docker compose up -d --build`
+- [ ] Run certbot to get TLS cert for the domain
+- [ ] Verify HTTPS and stream, run the same smoke test checklist as above
+
+### Things to harden before sharing the link with family
+- [ ] Set a strong `SITE_PASSPHRASE` and `ADMIN_TOKEN` in `.env`
+- [ ] Confirm nginx is not exposing `/internal/` routes externally
+- [ ] Set up a simple backup: daily cron to snapshot the SQLite DB and sync `/media` to S3 (or just snapshot the EBS volume)
+- [ ] Test that the certbot auto-renewal loop works (`docker compose logs certbot`)
