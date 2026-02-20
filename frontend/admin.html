@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Family Radio — Admin</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body>
+  <nav>
+    <a class="logo" href="/">📻 Family Radio</a>
+    <a href="/">Submit</a>
+    <a href="/status.html">Now Playing</a>
+    <a href="/admin.html" class="active">Admin</a>
+  </nav>
+
+  <div class="container" x-data="adminPage()" x-init="init()">
+    <h1>Admin</h1>
+    <p class="subtitle">Manage the station programming and library.</p>
+
+    <!-- Auth -->
+    <div class="card" x-show="!authed">
+      <h2>Admin Login</h2>
+      <div class="form-group">
+        <label>Admin Token</label>
+        <input type="text" x-model="tokenInput" placeholder="Bearer token" @keydown.enter="login()" />
+      </div>
+      <div class="alert error" x-show="authError" x-cloak x-text="authError"></div>
+      <button class="btn" @click="login()">Sign In</button>
+    </div>
+
+    <!-- Admin Panel -->
+    <div x-show="authed" x-cloak>
+      <div class="alert success" x-show="successMsg" x-cloak x-text="successMsg"></div>
+      <div class="alert error" x-show="errorMsg" x-cloak x-text="errorMsg"></div>
+
+      <!-- Programming Mode -->
+      <div class="card">
+        <h2>Programming Mode</h2>
+        <div class="mode-toggle" style="margin-bottom:1rem">
+          <button class="btn" :class="{ secondary: config.programming_mode !== 'rotation' }"
+                  @click="setMode('rotation')">Rotation</button>
+          <button class="btn" :class="{ secondary: config.programming_mode !== 'mood' }"
+                  @click="setMode('mood')">Mood Match</button>
+        </div>
+        <p style="color:var(--muted); font-size:0.875rem">
+          <strong>Rotation:</strong> Round-robin through each submitter, playing N songs per block.<br>
+          <strong>Mood:</strong> Automatically picks the next song based on audio energy/feel.
+        </p>
+
+        <div class="form-group" style="margin-top:1.2rem" x-show="config.programming_mode === 'rotation'">
+          <label>Songs per submitter block</label>
+          <input type="text" style="width:80px"
+                 :value="config.rotation_tracks_per_block"
+                 @change="setBlockSize($event.target.value)" />
+        </div>
+      </div>
+
+      <!-- Skip / Controls -->
+      <div class="card">
+        <h2>Playback Controls</h2>
+        <p style="color:var(--muted); font-size:0.875rem; margin-bottom:1rem">
+          Skip signals the player to move to the next song. Takes effect within a few seconds.
+        </p>
+        <button class="btn" @click="skip()">⏭ Skip Current Track</button>
+      </div>
+
+      <!-- Library -->
+      <div class="card">
+        <h2>Library (<span x-text="tracks.length"></span> tracks)</h2>
+        <div x-show="tracks.length === 0" class="empty-state">No tracks yet.</div>
+
+        <template x-for="track in tracks" :key="track.id">
+          <div class="track-item">
+            <div class="track-meta">
+              <div class="track-title" x-text="track.title"></div>
+              <div class="track-sub">
+                <span x-text="track.artist"></span> · by <span x-text="track.submitter"></span>
+                · <span x-text="track.source_type"></span>
+                <span x-show="track.duration_s"> · <span x-text="formatDuration(track.duration_s)"></span></span>
+              </div>
+              <div x-show="track.error_msg" style="color: var(--danger); font-size:0.8rem; margin-top:0.2rem"
+                   x-text="track.error_msg"></div>
+            </div>
+            <span class="badge" :class="track.status" x-text="track.status"></span>
+            <button class="btn danger" style="padding:0.35rem 0.75rem; font-size:0.8rem"
+                    @click="deleteTrack(track.id)">✕</button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function adminPage() {
+      return {
+        authed: false,
+        tokenInput: localStorage.getItem('adminToken') || '',
+        authError: '',
+        config: {},
+        tracks: [],
+        successMsg: '',
+        errorMsg: '',
+
+        async init() {
+          if (this.tokenInput) {
+            await this.login();
+          }
+        },
+
+        async login() {
+          this.authError = '';
+          try {
+            const res = await this.apiGet('/api/admin/config');
+            if (res.ok) {
+              this.config = await res.json();
+              this.authed = true;
+              localStorage.setItem('adminToken', this.tokenInput);
+              await this.loadLibrary();
+            } else {
+              this.authError = 'Invalid token.';
+              localStorage.removeItem('adminToken');
+            }
+          } catch (e) {
+            this.authError = 'Connection error.';
+          }
+        },
+
+        async loadLibrary() {
+          const res = await fetch('/api/library');
+          const data = await res.json();
+          this.tracks = data.tracks;
+        },
+
+        async setMode(mode) {
+          const res = await this.apiPost('/api/admin/config', { programming_mode: mode });
+          if (res.ok) {
+            this.config.programming_mode = mode;
+            this.flash('success', `Mode set to ${mode}`);
+          } else {
+            this.flash('error', 'Failed to update mode.');
+          }
+        },
+
+        async setBlockSize(val) {
+          const n = parseInt(val);
+          if (isNaN(n) || n < 1 || n > 20) return;
+          const res = await this.apiPost('/api/admin/config', { rotation_tracks_per_block: n });
+          if (res.ok) {
+            this.config.rotation_tracks_per_block = n;
+            this.flash('success', `Block size set to ${n}`);
+          }
+        },
+
+        async skip() {
+          const res = await this.apiPost('/api/admin/skip', {});
+          if (res.ok) {
+            this.flash('success', 'Skip requested — next track incoming.');
+          } else {
+            this.flash('error', 'Failed to skip.');
+          }
+        },
+
+        async deleteTrack(id) {
+          if (!confirm('Delete this track from the library?')) return;
+          const res = await this.apiFetch('DELETE', `/api/admin/track/${id}`);
+          if (res.ok) {
+            this.tracks = this.tracks.filter(t => t.id !== id);
+            this.flash('success', 'Track deleted.');
+          } else {
+            this.flash('error', 'Failed to delete track.');
+          }
+        },
+
+        apiGet(url) {
+          return fetch(url, { headers: { Authorization: `Bearer ${this.tokenInput}` } });
+        },
+
+        apiPost(url, body) {
+          return fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${this.tokenInput}`,
+            },
+            body: JSON.stringify(body),
+          });
+        },
+
+        apiFetch(method, url) {
+          return fetch(url, {
+            method,
+            headers: { Authorization: `Bearer ${this.tokenInput}` },
+          });
+        },
+
+        flash(type, msg) {
+          this[type === 'success' ? 'successMsg' : 'errorMsg'] = msg;
+          setTimeout(() => {
+            this.successMsg = '';
+            this.errorMsg = '';
+          }, 4000);
+        },
+
+        formatDuration(s) {
+          if (!s) return '';
+          const m = Math.floor(s / 60);
+          const sec = Math.round(s % 60).toString().padStart(2, '0');
+          return `${m}:${sec}`;
+        }
+      };
+    }
+  </script>
+</body>
+</html>

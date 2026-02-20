@@ -1,0 +1,116 @@
+import sqlite3
+import os
+from contextlib import contextmanager
+
+DB_PATH = os.environ.get("DB_PATH", "/data/radio.db")
+
+SCHEMA = """
+PRAGMA journal_mode = WAL;
+
+CREATE TABLE IF NOT EXISTS tracks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    artist TEXT NOT NULL,
+    submitter TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_url TEXT,
+    file_path TEXT,
+    duration_s REAL,
+    tempo_bpm REAL,
+    rms_energy REAL,
+    spectral_centroid REAL,
+    zero_crossing_rate REAL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    error_msg TEXT,
+    submitted_at TEXT NOT NULL,
+    ready_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS play_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id TEXT NOT NULL REFERENCES tracks(id),
+    played_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id TEXT NOT NULL REFERENCES tracks(id),
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    error_msg TEXT
+);
+
+CREATE TABLE IF NOT EXISTS config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+CONFIG_DEFAULTS = {
+    "programming_mode": "rotation",
+    "rotation_tracks_per_block": "3",
+    "rotation_current_submitter_idx": "0",
+    "rotation_current_block_count": "0",
+    "skip_requested": "false",
+    "feature_min_tempo_bpm": "0",
+    "feature_max_tempo_bpm": "1",
+    "feature_min_rms_energy": "0",
+    "feature_max_rms_energy": "1",
+    "feature_min_spectral_centroid": "0",
+    "feature_max_spectral_centroid": "1",
+    "feature_min_zero_crossing_rate": "0",
+    "feature_max_zero_crossing_rate": "1",
+}
+
+
+def get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+@contextmanager
+def db():
+    conn = get_connection()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def init_db():
+    conn = get_connection()
+    try:
+        conn.executescript(SCHEMA)
+        for key, value in CONFIG_DEFAULTS.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)",
+                (key, value),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_config(key: str) -> str:
+    with db() as conn:
+        row = conn.execute("SELECT value FROM config WHERE key=?", (key,)).fetchone()
+        if row:
+            return row["value"]
+        return CONFIG_DEFAULTS.get(key, "")
+
+
+def set_config(key: str, value: str):
+    with db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+            (key, value),
+        )

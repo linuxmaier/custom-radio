@@ -1,0 +1,19 @@
+# Secrets
+.env
+nginx/.htpasswd
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Runtime data (Docker volumes)
+media/
+data/
+
+# Editor
+.DS_Store
+*.swp

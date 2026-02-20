@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Family Radio — Submit a Song</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body>
+  <nav>
+    <a class="logo" href="/">📻 Family Radio</a>
+    <a href="/" class="active">Submit</a>
+    <a href="/status.html">Now Playing</a>
+    <a href="/admin.html">Admin</a>
+  </nav>
+
+  <div class="container" x-data="submitForm()">
+    <h1>Add a Song</h1>
+    <p class="subtitle">Share music with the family. It'll start playing within a few minutes.</p>
+
+    <!-- Alerts -->
+    <div x-show="successTrackId" class="alert success" x-cloak>
+      Song submitted! Track ID: <code x-text="successTrackId"></code>
+      <span x-show="pollStatus === 'ready'"> — Now in the queue ✓</span>
+      <span x-show="pollStatus === 'pending' || pollStatus === 'processing'"> — Processing…</span>
+      <span x-show="pollStatus === 'failed'" style="color: var(--danger)"> — Processing failed.</span>
+    </div>
+
+    <div x-show="warning" class="alert warning" x-cloak>
+      ⚠️ <span x-text="warning"></span>
+    </div>
+
+    <div x-show="errorMsg" class="alert error" x-cloak>
+      <span x-text="errorMsg"></span>
+    </div>
+
+    <div class="card">
+      <!-- Source tabs -->
+      <div class="tabs">
+        <button class="tab-btn" :class="{ active: tab === 'file' }" @click="tab = 'file'">Upload File</button>
+        <button class="tab-btn" :class="{ active: tab === 'youtube' }" @click="tab = 'youtube'">YouTube</button>
+        <button class="tab-btn" :class="{ active: tab === 'spotify' }" @click="tab = 'spotify'">Spotify</button>
+      </div>
+
+      <form @submit.prevent="submitSong">
+        <div class="form-group">
+          <label for="submitter">Your name</label>
+          <input id="submitter" type="text" x-model="submitter" placeholder="e.g. Mom, Dad, Grandpa…" required />
+        </div>
+
+        <!-- File upload -->
+        <div x-show="tab === 'file'">
+          <div class="form-group">
+            <label for="fileInput">Audio file (MP3, WAV, FLAC, M4A, OGG — max 200MB)</label>
+            <input id="fileInput" type="file" accept=".mp3,.wav,.flac,.m4a,.ogg,.opus"
+                   @change="fileSelected($event)" />
+          </div>
+          <div class="form-group">
+            <label for="titleInput">Title (optional — auto-detected from file name)</label>
+            <input id="titleInput" type="text" x-model="title" placeholder="Song title" />
+          </div>
+          <div class="form-group">
+            <label for="artistInput">Artist (optional)</label>
+            <input id="artistInput" type="text" x-model="artist" placeholder="Artist name" />
+          </div>
+        </div>
+
+        <!-- YouTube -->
+        <div x-show="tab === 'youtube'">
+          <div class="form-group">
+            <label for="ytUrl">YouTube URL</label>
+            <input id="ytUrl" type="url" x-model="youtubeUrl"
+                   placeholder="https://www.youtube.com/watch?v=…" />
+          </div>
+        </div>
+
+        <!-- Spotify -->
+        <div x-show="tab === 'spotify'">
+          <div class="alert warning">
+            ⚠️ Spotify downloads may fail due to known API instability.
+            If it fails, try pasting a YouTube Music link instead.
+          </div>
+          <div class="form-group">
+            <label for="spotUrl">Spotify Track URL</label>
+            <input id="spotUrl" type="url" x-model="spotifyUrl"
+                   placeholder="https://open.spotify.com/track/…" />
+          </div>
+        </div>
+
+        <button type="submit" class="btn" :disabled="submitting">
+          <span x-show="submitting" class="spinner"></span>
+          <span x-text="submitting ? 'Submitting…' : 'Add to Station'"></span>
+        </button>
+      </form>
+    </div>
+
+    <!-- Status card after submission -->
+    <div class="card" x-show="successTrackId" x-cloak>
+      <h2>Submission Status</h2>
+      <div class="track-item">
+        <div class="track-meta">
+          <div class="track-title" x-text="submittedTitle || 'Processing…'"></div>
+          <div class="track-sub" x-text="submittedArtist"></div>
+        </div>
+        <span class="badge" :class="pollStatus" x-text="pollStatus"></span>
+      </div>
+      <p style="margin-top:1rem; color: var(--muted); font-size:0.875rem;">
+        You can check <a href="/status.html" style="color:var(--accent)">Now Playing</a> once it's ready.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    function submitForm() {
+      return {
+        tab: 'file',
+        submitter: '',
+        title: '',
+        artist: '',
+        file: null,
+        youtubeUrl: '',
+        spotifyUrl: '',
+        submitting: false,
+        successTrackId: '',
+        submittedTitle: '',
+        submittedArtist: '',
+        warning: '',
+        errorMsg: '',
+        pollStatus: 'pending',
+        pollInterval: null,
+
+        fileSelected(event) {
+          this.file = event.target.files[0];
+        },
+
+        async submitSong() {
+          this.errorMsg = '';
+          this.warning = '';
+          this.successTrackId = '';
+
+          if (!this.submitter.trim()) {
+            this.errorMsg = 'Please enter your name.';
+            return;
+          }
+
+          this.submitting = true;
+          const fd = new FormData();
+          fd.append('submitter', this.submitter.trim());
+
+          if (this.tab === 'file') {
+            if (!this.file) { this.errorMsg = 'Please select a file.'; this.submitting = false; return; }
+            fd.append('file', this.file);
+            if (this.title) fd.append('title', this.title);
+            if (this.artist) fd.append('artist', this.artist);
+          } else if (this.tab === 'youtube') {
+            if (!this.youtubeUrl) { this.errorMsg = 'Please enter a YouTube URL.'; this.submitting = false; return; }
+            fd.append('youtube_url', this.youtubeUrl);
+          } else {
+            if (!this.spotifyUrl) { this.errorMsg = 'Please enter a Spotify URL.'; this.submitting = false; return; }
+            fd.append('spotify_url', this.spotifyUrl);
+          }
+
+          try {
+            const res = await fetch('/api/submit', { method: 'POST', body: fd });
+            const data = await res.json();
+            if (!res.ok) {
+              this.errorMsg = data.detail || 'Submission failed.';
+              return;
+            }
+            this.successTrackId = data.track_id;
+            if (data.warning) this.warning = data.warning;
+            this.pollStatus = 'pending';
+            this.startPolling(data.track_id);
+          } catch (e) {
+            this.errorMsg = 'Network error. Please try again.';
+          } finally {
+            this.submitting = false;
+          }
+        },
+
+        startPolling(trackId) {
+          this.pollInterval = setInterval(async () => {
+            try {
+              const res = await fetch(`/api/track/${trackId}`);
+              const data = await res.json();
+              this.pollStatus = data.status;
+              this.submittedTitle = data.title;
+              this.submittedArtist = data.artist;
+              if (data.status === 'ready' || data.status === 'failed') {
+                clearInterval(this.pollInterval);
+                if (data.status === 'failed' && data.error_msg) {
+                  const spotifyNote = data.error_msg.includes('spotdl')
+                    ? ' Try pasting a YouTube Music link instead.'
+                    : '';
+                  this.warning = 'Processing failed: ' + data.error_msg + spotifyNote;
+                }
+              }
+            } catch (e) {
+              // ignore transient errors during polling
+            }
+          }, 5000);
+        }
+      };
+    }
+  </script>
+</body>
+</html>

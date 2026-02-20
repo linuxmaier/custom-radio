@@ -1,0 +1,72 @@
+services:
+  icecast:
+    image: moul/icecast
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./icecast/icecast.xml:/etc/icecast.xml:ro
+    environment:
+      - ICECAST_SOURCE_PASSWORD=${ICECAST_SOURCE_PASSWORD}
+      - ICECAST_ADMIN_PASSWORD=${ICECAST_ADMIN_PASSWORD}
+      - ICECAST_RELAY_PASSWORD=${ICECAST_RELAY_PASSWORD}
+
+  liquidsoap:
+    build: ./liquidsoap
+    restart: unless-stopped
+    depends_on:
+      - icecast
+      - api
+    volumes:
+      - media:/media
+      - ./liquidsoap/radio.liq:/etc/liquidsoap/radio.liq:ro
+    environment:
+      - ICECAST_SOURCE_PASSWORD=${ICECAST_SOURCE_PASSWORD}
+      - SERVER_HOSTNAME=${SERVER_HOSTNAME}
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    volumes:
+      - media:/media
+      - db:/data
+    environment:
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - DB_PATH=/data/radio.db
+      - MEDIA_DIR=/media
+    expose:
+      - "8000"
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - SERVER_HOSTNAME=${SERVER_HOSTNAME}
+    volumes:
+      # .template files are processed by envsubst at container startup
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
+      - ./frontend:/usr/share/nginx/html:ro
+      - certbot_www:/var/www/certbot:ro
+      - certbot_conf:/etc/letsencrypt:ro
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_conf:/etc/letsencrypt
+    entrypoint: >
+      sh -c "trap exit TERM; while :; do
+        certbot renew --webroot -w /var/www/certbot --quiet;
+        sleep 12h & wait $${!}; done"
+
+volumes:
+  media:
+  db:
+  certbot_www:
+  certbot_conf:
