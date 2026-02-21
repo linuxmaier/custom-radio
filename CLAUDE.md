@@ -68,6 +68,7 @@ The web player in `frontend/playing.html` embeds an `<audio>` element pointed di
 - **The `pause` event fires multiple times**: browsers fire `pause` when buffering stalls as well as on user-initiated pauses. Always `clearInterval` any existing timer before starting a new one in the pause handler, or multiple timers will accumulate and fight over the displayed value.
 - **`audio.currentTime` is meaningless for live streams**: do not use it to measure lag. Track elapsed wall-clock time instead (store `Date.now()` at pause, accumulate into a `totalBehindMs` counter on resume).
 - **Port 8000 must be open**: the stream bypasses nginx, so the Icecast port needs to be reachable directly from the browser. In the AWS security group this means port 8000 must be open to the public (already noted in deployment TODOs).
+- **Buffering stalls vs user pauses**: the `pause` event fires for both. Use a `userPaused` flag (set to `true` in the click handler before calling `audio.pause()`, cleared on `play`) to distinguish them. Only accumulate behind-live lag and start the countdown timer when `userPaused` is true.
 
 ## Known Issues / Workarounds
 

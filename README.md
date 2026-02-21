@@ -7,7 +7,7 @@ A self-hosted internet radio station for families to share music. Members submit
 Four Docker services:
 
 - **Icecast** — stream server listeners connect to at `http://domain:8000/radio`
-- **Liquidsoap** — programs the stream; asks the API for the next track, handles crossfading and ICY metadata
+- **Liquidsoap** — programs the stream; asks the API for the next track and handles ICY metadata
 - **Python/FastAPI** — manages submissions, downloads, audio analysis, library, and scheduling
 - **Nginx** — reverse proxy for the web UI; handles HTTPS and HTTP Basic Auth
 
@@ -51,7 +51,7 @@ docker compose run --rm certbot certonly \
 | Page | URL | Purpose |
 |------|-----|---------|
 | Submit | `/` | Add a song (file, YouTube, or Spotify) |
-| Now Playing | `/status.html` | See what's on and recent history |
+| Now Playing | `/playing.html` | See what's on and recent history |
 | Admin | `/admin.html` | Change mode, skip track, manage library |
 
 All pages are behind HTTP Basic Auth (shared family username/password from `.env`). The admin page additionally requires a Bearer token.
@@ -135,7 +135,7 @@ family-radio/
 │       └── status.py
 └── frontend/
     ├── index.html
-    ├── status.html
+    ├── playing.html
     ├── admin.html
     └── static/
         └── style.css
