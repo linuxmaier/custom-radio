@@ -13,10 +13,10 @@ router = APIRouter()
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 
 
-def require_admin(authorization: str = Header(None)):
+def require_admin(x_admin_token: str = Header(None)):
     if not ADMIN_TOKEN:
         raise HTTPException(500, "ADMIN_TOKEN not configured")
-    if authorization != f"Bearer {ADMIN_TOKEN}":
+    if x_admin_token != ADMIN_TOKEN:
         raise HTTPException(403, "Invalid admin token")
 
 

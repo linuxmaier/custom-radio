@@ -169,7 +169,7 @@
         },
 
         apiGet(url) {
-          return fetch(url, { headers: { Authorization: `Bearer ${this.tokenInput}` } });
+          return fetch(url, { headers: { 'X-Admin-Token': this.tokenInput } });
         },
 
         apiPost(url, body) {
@@ -177,7 +177,7 @@
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${this.tokenInput}`,
+              'X-Admin-Token': this.tokenInput,
             },
             body: JSON.stringify(body),
           });
@@ -186,7 +186,7 @@
         apiFetch(method, url) {
           return fetch(url, {
             method,
-            headers: { Authorization: `Bearer ${this.tokenInput}` },
+            headers: { 'X-Admin-Token': this.tokenInput },
           });
         },
 

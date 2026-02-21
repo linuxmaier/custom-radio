@@ -31,6 +31,8 @@ Routers in `api/routers/`:
 
 All public routes go through nginx at `/api/`. Internal routes are Docker-network-only (blocked by nginx).
 
+Admin endpoints are authenticated via the `X-Admin-Token` request header (value = `ADMIN_TOKEN` env var, no "Bearer" prefix). A custom header is used instead of `Authorization` because nginx's `auth_basic` consumes the `Authorization` header for site-wide HTTP Basic Auth, which would prevent the Bearer token from ever reaching the API.
+
 ## Database
 
 SQLite at `/data/radio.db` (Docker volume). Schema initialised in `database.py:init_db()`. Tables: `tracks`, `play_log`, `jobs`, `config`.

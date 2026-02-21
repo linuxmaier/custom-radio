@@ -54,7 +54,7 @@ docker compose run --rm certbot certonly \
 | Now Playing | `/playing.html` | See what's on and recent history |
 | Admin | `/admin.html` | Change mode, skip track, manage library |
 
-All pages are behind HTTP Basic Auth (shared family username/password from `.env`). The admin page additionally requires a Bearer token.
+All pages are behind HTTP Basic Auth (shared family username/password from `.env`). The admin page additionally requires an admin token sent via the `X-Admin-Token` header.
 
 ## Programming Modes
 
@@ -98,7 +98,7 @@ See `.env.example` for the full list:
 | `ICECAST_SOURCE_PASSWORD` | Liquidsoap → Icecast password |
 | `ICECAST_ADMIN_PASSWORD` | Icecast web admin password |
 | `ICECAST_RELAY_PASSWORD` | Icecast relay password |
-| `ADMIN_TOKEN` | Bearer token for admin API endpoints |
+| `ADMIN_TOKEN` | Token for admin API endpoints (sent via `X-Admin-Token` header) |
 | `SITE_USER` | HTTP Basic Auth username (default: `family`) |
 | `SITE_PASSPHRASE` | HTTP Basic Auth password |
 
