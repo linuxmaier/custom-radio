@@ -141,6 +141,16 @@ family-radio/
         └── style.css
 ```
 
+## Development Choices
+
+### Icecast burst-on-connect disabled
+
+Icecast's default behaviour is to send a burst of buffered audio (~65 KB, roughly 4 seconds at 128 kbps) to each new listener on connect. This pre-fills the player's buffer so playback starts smoothly.
+
+We disable it (`burst-on-connect=0`) because the burst causes audible bouncing when a browser player connects to the live stream. The browser plays the burst (which is a few seconds behind the live edge), catches up to live, and if a brief reconnect happens it gets another burst and jumps back again. The back-and-forth is more disruptive than the alternative.
+
+The tradeoff: without a burst, playback on connect depends entirely on live audio arriving fast enough to fill the player buffer. On a slow or high-latency connection there is a small risk of a brief stall or silence at startup. For a home-network family station this is acceptable. If it becomes a problem, setting `burst-size` to a small value (e.g. 8192 bytes, ~0.5 s) is a reasonable middle ground.
+
 ## Technical Notes
 
 - **SQLite WAL mode** with a single uvicorn worker avoids write contention without needing Redis/Postgres.
