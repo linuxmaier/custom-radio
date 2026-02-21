@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 
 from database import db, get_connection
-from downloader import download_youtube, download_spotify, convert_to_standard_mp3
+from downloader import download_youtube, convert_to_standard_mp3
 from audio import extract_features
 from scheduler import update_feature_bounds
 
@@ -71,9 +71,6 @@ def _process_job(job_id: int, track_id: str):
 
         elif source_type == "youtube":
             title, artist, raw_path = download_youtube(source_url, track_id)
-
-        elif source_type == "spotify":
-            title, artist, raw_path = download_spotify(source_url, track_id)
 
         else:
             raise RuntimeError(f"Unknown source_type: {source_type}")

@@ -35,7 +35,6 @@
       <div class="tabs">
         <button class="tab-btn" :class="{ active: tab === 'file' }" @click="tab = 'file'">Upload File</button>
         <button class="tab-btn" :class="{ active: tab === 'youtube' }" @click="tab = 'youtube'">YouTube</button>
-        <button class="tab-btn" :class="{ active: tab === 'spotify' }" @click="tab = 'spotify'">Spotify</button>
       </div>
 
       <form @submit.prevent="submitSong">
@@ -67,19 +66,6 @@
             <label for="ytUrl">YouTube URL</label>
             <input id="ytUrl" type="url" x-model="youtubeUrl"
                    placeholder="https://www.youtube.com/watch?v=…" />
-          </div>
-        </div>
-
-        <!-- Spotify -->
-        <div x-show="tab === 'spotify'">
-          <div class="alert warning">
-            ⚠️ Spotify downloads may fail due to known API instability.
-            If it fails, try pasting a YouTube Music link instead.
-          </div>
-          <div class="form-group">
-            <label for="spotUrl">Spotify Track URL</label>
-            <input id="spotUrl" type="url" x-model="spotifyUrl"
-                   placeholder="https://open.spotify.com/track/…" />
           </div>
         </div>
 
@@ -115,7 +101,6 @@
         artist: '',
         file: null,
         youtubeUrl: '',
-        spotifyUrl: '',
         submitting: false,
         successTrackId: '',
         submittedTitle: '',
@@ -151,9 +136,6 @@
           } else if (this.tab === 'youtube') {
             if (!this.youtubeUrl) { this.errorMsg = 'Please enter a YouTube URL.'; this.submitting = false; return; }
             fd.append('youtube_url', this.youtubeUrl);
-          } else {
-            if (!this.spotifyUrl) { this.errorMsg = 'Please enter a Spotify URL.'; this.submitting = false; return; }
-            fd.append('spotify_url', this.spotifyUrl);
           }
 
           try {
@@ -185,10 +167,7 @@
               if (data.status === 'ready' || data.status === 'failed') {
                 clearInterval(this.pollInterval);
                 if (data.status === 'failed' && data.error_msg) {
-                  const spotifyNote = data.error_msg.includes('spotdl')
-                    ? ' Try pasting a YouTube Music link instead.'
-                    : '';
-                  this.warning = 'Processing failed: ' + data.error_msg + spotifyNote;
+                  this.warning = 'Processing failed: ' + data.error_msg;
                 }
               }
             } catch (e) {

@@ -20,7 +20,6 @@ Get the full stack running locally to validate the end-to-end flow before touchi
 - [ ] ICY metadata (artist/title) shows in VLC's Media Information window
 - [ ] Admin page: switch mode to Mood, verify next track changes without a restart
 - [ ] Admin page: skip button advances to the next track
-- [ ] Submit a Spotify link → fails gracefully with a warning message (don't fix spotdl, just confirm the error handling works)
 
 ---
 
@@ -88,6 +87,15 @@ After the local test passes, deploy to a single EC2 instance.
   - Add `comment` field to the `tracks` table and `POST /submit` endpoint
   - Show the comment on the Now Playing page alongside the submitter's name when the track is on air
   - Include the comment in the AI DJ interlude script if that feature is built
+
+### Spotify integration
+- [ ] Re-add Spotify track submission via `spotdl`
+  - Was removed due to spotdl API instability (Feb 2026) — revisit once spotdl is stable
+  - Add `spotify_url` form field back to `/submit` endpoint
+  - Add `download_spotify()` back to `api/downloader.py` and handle `source_type='spotify'` in `api/worker.py`
+  - Re-add spotdl to `api/Dockerfile` (`pip install spotdl`)
+  - Re-add Spotify tab to `frontend/index.html`
+  - Consider wrapping in try/except and surfacing a user-friendly warning if download fails
 
 ### AI DJ interludes
 - [ ] Periodically generate a short spoken interlude between tracks: recap the last few songs and who submitted them, then intro the next one

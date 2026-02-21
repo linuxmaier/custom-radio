@@ -72,7 +72,6 @@ The web player in `frontend/playing.html` embeds an `<audio>` element pointed di
 
 ## Known Issues / Workarounds
 
-- **spotdl instability** (Feb 2026): Spotify downloads fail intermittently. The submit endpoint wraps spotdl in try/except and returns a warning. Direct users to YouTube Music links.
 - **yt-dlp + Deno**: yt-dlp requires Deno as of late 2025. Deno is installed in `api/Dockerfile`.
 - **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}`. The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. The `SERVER_HOSTNAME` env var must be set in docker-compose.yml for nginx.
 

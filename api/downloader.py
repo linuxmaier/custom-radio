@@ -62,57 +62,6 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
     return title, artist, output_path
 
 
-def download_spotify(url: str, track_id: str) -> tuple[str, str, str]:
-    """
-    Download a Spotify track via spotdl.
-    Returns (title, artist, output_path).
-    Raises RuntimeError on failure (spotdl is known to be unstable as of Feb 2026).
-    """
-    output_dir = os.path.join(MEDIA_DIR, "raw")
-    os.makedirs(output_dir, exist_ok=True)
-
-    cmd = [
-        "spotdl",
-        "--output", os.path.join(output_dir, "{track-id}"),
-        "--format", "mp3",
-        "--bitrate", "128k",
-        url,
-    ]
-
-    logger.info(f"Downloading Spotify: {url}")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=output_dir)
-
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"spotdl failed (Spotify API may be unstable): {result.stderr[:500]}"
-        )
-
-    # spotdl names files as "Artist - Title.mp3"
-    # Find the newest MP3 in output_dir
-    mp3_files = [
-        os.path.join(output_dir, f)
-        for f in os.listdir(output_dir)
-        if f.endswith(".mp3") and not f.startswith(track_id)
-    ]
-    if not mp3_files:
-        raise RuntimeError("spotdl succeeded but no MP3 file found")
-
-    newest = max(mp3_files, key=os.path.getmtime)
-
-    # Parse title/artist from filename "Artist - Title.mp3"
-    basename = os.path.splitext(os.path.basename(newest))[0]
-    if " - " in basename:
-        artist, title = basename.split(" - ", 1)
-    else:
-        artist = "Unknown Artist"
-        title = basename
-
-    # Rename to track_id
-    final_path = os.path.join(output_dir, f"{track_id}_raw.mp3")
-    os.rename(newest, final_path)
-
-    return title.strip(), artist.strip(), final_path
-
 
 def convert_to_standard_mp3(input_path: str, track_id: str, comment_tag: str) -> str:
     """

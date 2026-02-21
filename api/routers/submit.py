@@ -48,7 +48,6 @@ def _create_track_and_job(
 async def submit_track(
     submitter: str = Form(...),
     youtube_url: str = Form(None),
-    spotify_url: str = Form(None),
     title: str = Form(None),
     artist: str = Form(None),
     file: UploadFile = File(None),
@@ -61,10 +60,9 @@ async def submit_track(
     # Determine source
     has_file = file is not None and file.filename
     has_youtube = youtube_url and youtube_url.strip()
-    has_spotify = spotify_url and spotify_url.strip()
 
-    if sum([has_file, bool(has_youtube), bool(has_spotify)]) != 1:
-        raise HTTPException(400, "Provide exactly one of: file, youtube_url, or spotify_url")
+    if sum([has_file, bool(has_youtube)]) != 1:
+        raise HTTPException(400, "Provide exactly one of: file or youtube_url")
 
     track_id = str(uuid.uuid4())
 
@@ -112,25 +110,3 @@ async def submit_track(
 
         logger.info(f"YouTube submission: track_id={track_id} url={url}")
         return JSONResponse({"track_id": track_id, "status": "pending"})
-
-    else:  # spotify
-        url = spotify_url.strip()
-        if "spotify.com" not in url:
-            raise HTTPException(400, "Does not look like a Spotify URL")
-
-        with db() as conn:
-            _create_track_and_job(
-                conn, track_id,
-                title or "Pending...", artist or "Pending...",
-                submitter, "spotify", url,
-            )
-
-        logger.info(f"Spotify submission: track_id={track_id} url={url}")
-        return JSONResponse({
-            "track_id": track_id,
-            "status": "pending",
-            "warning": (
-                "Spotify downloads may fail due to known spotdl API instability (Feb 2026). "
-                "If this fails, try pasting a YouTube Music link instead."
-            ),
-        })

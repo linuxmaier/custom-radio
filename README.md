@@ -1,6 +1,6 @@
 # Family Radio Station
 
-A self-hosted internet radio station for families to share music. Members submit songs via a web form (file upload, YouTube link, or Spotify link). The stream can be tuned into from any radio client (VLC, browser, etc.).
+A self-hosted internet radio station for families to share music. Members submit songs via a web form (file upload or YouTube link). The stream can be tuned into from any radio client (VLC, browser, etc.).
 
 ## Architecture
 
@@ -50,7 +50,7 @@ docker compose run --rm certbot certonly \
 
 | Page | URL | Purpose |
 |------|-----|---------|
-| Submit | `/` | Add a song (file, YouTube, or Spotify) |
+| Submit | `/` | Add a song (file upload or YouTube link) |
 | Now Playing | `/playing.html` | See what's on and recent history |
 | Admin | `/admin.html` | Change mode, skip track, manage library |
 
@@ -70,9 +70,6 @@ Upload MP3, WAV, FLAC, M4A, OGG, or OPUS files up to 200MB.
 
 ### YouTube
 Paste any YouTube video URL. Title and artist are extracted from the video metadata.
-
-### Spotify
-Paste a Spotify track URL. **Note:** Spotify downloads via `spotdl` may fail due to known API instability (as of early 2026). If a submission fails, paste a YouTube Music link instead.
 
 ## API Reference
 
