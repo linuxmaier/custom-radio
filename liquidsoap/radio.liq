@@ -3,6 +3,8 @@
 # Family Radio Station - Liquidsoap script
 
 settings.init.allow_root.set(true)
+settings.server.telnet.set(true)
+settings.server.telnet.bind_addr.set("0.0.0.0")
 settings.server.timeout.set(30.)
 
 icecast_host = "icecast"

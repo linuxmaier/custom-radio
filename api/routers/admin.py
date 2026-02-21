@@ -1,4 +1,5 @@
 import os
+import socket
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Header
@@ -32,7 +33,6 @@ def get_admin_config(auth=Depends(require_admin)):
         "rotation_tracks_per_block": int(get_config("rotation_tracks_per_block")),
         "rotation_current_submitter_idx": int(get_config("rotation_current_submitter_idx")),
         "rotation_current_block_count": int(get_config("rotation_current_block_count")),
-        "skip_requested": get_config("skip_requested") == "true",
     }
 
 
@@ -53,11 +53,22 @@ def update_admin_config(update: ConfigUpdate, auth=Depends(require_admin)):
     return {"ok": True}
 
 
+def _liquidsoap_skip():
+    """Send a skip command to the Liquidsoap telnet server."""
+    with socket.create_connection(("liquidsoap", 1234), timeout=5) as sock:
+        sock.sendall(b"dynamic.flush_and_skip\nquit\n")
+        sock.recv(1024)  # drain response
+
+
 @router.post("/admin/skip")
 def request_skip(auth=Depends(require_admin)):
     """Signal Liquidsoap to skip to the next track."""
-    set_config("skip_requested", "true")
-    logger.info("Skip requested")
+    try:
+        _liquidsoap_skip()
+        logger.info("Skip sent to Liquidsoap")
+    except Exception as e:
+        logger.error(f"Skip failed: {e}")
+        raise HTTPException(503, "Could not reach Liquidsoap")
     return {"ok": True}
 
 
