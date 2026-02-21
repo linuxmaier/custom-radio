@@ -43,19 +43,45 @@ def _pick_rotation_track() -> str:
     idx = idx % len(submitters)
     current_submitter = submitters[idx]
 
-    # Pick the least-recently-played ready track for this submitter
+    # Pick the least-played ready track for this submitter, avoiding immediate repeats.
+    # First try excluding the globally last played track; fall back if no alternatives.
     with db() as conn:
         row = conn.execute(
             """
             SELECT t.id, t.file_path FROM tracks t
             WHERE t.submitter=? AND t.status='ready'
+              AND t.id != COALESCE(
+                  (SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1), ''
+              )
             ORDER BY (
+                SELECT COUNT(*) FROM play_log pl WHERE pl.track_id=t.id
+            ) ASC,
+            (
                 SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id
-            ) ASC NULLS FIRST, t.submitted_at ASC
+            ) ASC NULLS FIRST,
+            t.submitted_at ASC
             LIMIT 1
             """,
             (current_submitter,),
         ).fetchone()
+
+        if not row:
+            # Submitter's only ready track is the globally last played — allow repeat
+            row = conn.execute(
+                """
+                SELECT t.id, t.file_path FROM tracks t
+                WHERE t.submitter=? AND t.status='ready'
+                ORDER BY (
+                    SELECT COUNT(*) FROM play_log pl WHERE pl.track_id=t.id
+                ) ASC,
+                (
+                    SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id
+                ) ASC NULLS FIRST,
+                t.submitted_at ASC
+                LIMIT 1
+                """,
+                (current_submitter,),
+            ).fetchone()
 
     if not row:
         # This submitter has no ready tracks, advance to next
@@ -120,17 +146,28 @@ def _pick_mood_track() -> str:
 
     last_vec = normalize_features(last_features, mins, maxs)
 
-    # Get all ready tracks with features (exclude very recently played)
+    # Compute how many distinct recently-played tracks to exclude.
+    # Scales with library size so small libraries always have at least one candidate.
+    with db() as conn:
+        library_size = conn.execute(
+            "SELECT COUNT(*) FROM tracks WHERE status='ready' AND tempo_bpm IS NOT NULL"
+        ).fetchone()[0]
+
+    exclusion_count = min(max(library_size - 1, 0), 3)
+
+    # Get all ready tracks with features, excluding the most recently played distinct tracks
     with db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT t.id, t.file_path, t.tempo_bpm, t.rms_energy,
                    t.spectral_centroid, t.zero_crossing_rate
             FROM tracks t
             WHERE t.status='ready' AND t.tempo_bpm IS NOT NULL
               AND t.id NOT IN (
                   SELECT track_id FROM play_log
-                  ORDER BY played_at DESC LIMIT 3
+                  GROUP BY track_id
+                  ORDER BY MAX(played_at) DESC
+                  LIMIT {exclusion_count}
               )
             """
         ).fetchall()
