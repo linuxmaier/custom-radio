@@ -88,6 +88,7 @@
         loaded: false,
         playing: false,
         everPlayed: false,
+        userPaused: false,
         volume: 1,
         pausedSeconds: 0,
         pausedTimer: null,
@@ -102,10 +103,11 @@
           audio.addEventListener('play', () => {
             this.playing = true;
             this.everPlayed = true;
-            if (this.pausedAt !== null) {
+            if (this.userPaused && this.pausedAt !== null) {
               this.totalBehindMs += Date.now() - this.pausedAt;
               this.pausedAt = null;
             }
+            this.userPaused = false;
             if (this.pausedTimer) {
               clearInterval(this.pausedTimer);
               this.pausedTimer = null;
@@ -115,6 +117,8 @@
 
           audio.addEventListener('pause', () => {
             this.playing = false;
+            // Ignore buffering stalls — only track user-initiated pauses.
+            if (!this.userPaused) return;
             if (this.pausedTimer) {
               clearInterval(this.pausedTimer);
               this.pausedTimer = null;
@@ -136,6 +140,7 @@
         togglePlay() {
           const audio = this.$refs.audio;
           if (this.playing) {
+            this.userPaused = true;
             audio.pause();
           } else {
             if (!this.everPlayed) {
