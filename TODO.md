@@ -80,7 +80,13 @@ After the local test passes, deploy to a single EC2 instance.
 
 ---
 
-## 5. Future Features
+## 5. Deferred Testing
+
+- [ ] **Mode switch mid-rotation**: switch programming mode from Rotation to Mood (and back) while a track is playing; verify the scheduler picks up the new mode on the very next track without a restart. Requires a larger library (5+ tracks with audio features extracted) to make the Mood output meaningfully different from Rotation.
+
+---
+
+## 6. Future Features
 
 ### Submission comments
 - [ ] Allow submitters to add an optional short comment when submitting a song (e.g. "this one always reminds me of summer road trips")
