@@ -55,6 +55,12 @@ def update_admin_config(update: ConfigUpdate, auth=Depends(require_admin)):
 
 def _liquidsoap_skip():
     """Send a skip command to the Liquidsoap telnet server."""
+    # Clear last_returned before flushing so the flushed prefetch track doesn't
+    # count as an exclusion in the next get_next_track call. Without this, a
+    # submitter with 2 songs would have both excluded simultaneously (last_returned
+    # = flushed prefetch, last_played = the skipped track), triggering an early
+    # submitter advance.
+    set_config("last_returned_track_id", "")
     with socket.create_connection(("liquidsoap", 1234), timeout=5) as sock:
         sock.sendall(b"dynamic.flush_and_skip\nquit\n")
         sock.recv(1024)  # drain response

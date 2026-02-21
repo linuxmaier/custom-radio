@@ -26,7 +26,6 @@ def get_next_track_path() -> str:
 def _pick_rotation_track() -> str:
     """Round-robin through submitters, N tracks per block."""
     with db() as conn:
-        # Get all distinct submitters who have ready tracks
         rows = conn.execute(
             "SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter"
         ).fetchall()
@@ -35,27 +34,59 @@ def _pick_rotation_track() -> str:
     if not submitters:
         return ""
 
-    idx = int(get_config("rotation_current_submitter_idx"))
-    block_count = int(get_config("rotation_current_block_count"))
+    idx = int(get_config("rotation_current_submitter_idx")) % len(submitters)
     tracks_per_block = int(get_config("rotation_tracks_per_block"))
-
-    # Clamp index to valid range
-    idx = idx % len(submitters)
+    block_start_log_id = int(get_config("rotation_block_start_log_id") or "0")
+    last_returned_id = get_config("last_returned_track_id")
     current_submitter = submitters[idx]
 
-    # Pick the least-played ready track for this submitter, avoiding immediate repeats.
-    # Exclude both the last play_log entry AND the last track returned by the scheduler
-    # (last_returned_track_id), since the prefetch call can arrive before track-started
-    # has been logged to play_log.
-    last_returned_id = get_config("last_returned_track_id")
+    # Count songs from this submitter that have actually played since the block started.
+    # Add 1 if last_returned_id is also from this submitter — it may not be in
+    # play_log yet due to the prefetch/track-started race condition.
     with db() as conn:
+        played_this_block = conn.execute(
+            """
+            SELECT COUNT(*) as n FROM play_log pl
+            JOIN tracks t ON pl.track_id = t.id
+            WHERE t.submitter = ? AND pl.id > ?
+            """,
+            (current_submitter, block_start_log_id),
+        ).fetchone()["n"]
+
+        if last_returned_id:
+            lr = conn.execute(
+                "SELECT submitter FROM tracks WHERE id = ?", (last_returned_id,)
+            ).fetchone()
+            if lr and lr["submitter"] == current_submitter:
+                played_this_block += 1
+
+    def _advance():
+        next_idx = (idx + 1) % len(submitters)
+        set_config("rotation_current_submitter_idx", str(next_idx))
+        with db() as conn:
+            latest = conn.execute(
+                "SELECT COALESCE(MAX(id), 0) as n FROM play_log"
+            ).fetchone()["n"]
+        set_config("rotation_block_start_log_id", str(latest))
+
+    if played_this_block >= tracks_per_block:
+        logger.info(f"Rotation: block complete for {current_submitter}, advancing")
+        _advance()
+        return _pick_rotation_track()
+
+    # Pick the least-played ready track for this submitter, avoiding immediate repeats.
+    # Exclude both the play_log last-played entry and last_returned_track_id.
+    with db() as conn:
+        last_played = conn.execute(
+            "SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1"
+        ).fetchone()
+        last_played_id = last_played["track_id"] if last_played else ""
+
         row = conn.execute(
             """
             SELECT t.id, t.file_path FROM tracks t
             WHERE t.submitter=? AND t.status='ready'
-              AND t.id != COALESCE(
-                  (SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1), ''
-              )
+              AND t.id != ?
               AND t.id != ?
             ORDER BY (
                 SELECT COUNT(*) FROM play_log pl WHERE pl.track_id=t.id
@@ -66,7 +97,7 @@ def _pick_rotation_track() -> str:
             t.submitted_at ASC
             LIMIT 1
             """,
-            (current_submitter, last_returned_id),
+            (current_submitter, last_played_id, last_returned_id),
         ).fetchone()
 
         if not row and len(submitters) == 1:
@@ -88,24 +119,12 @@ def _pick_rotation_track() -> str:
             ).fetchone()
 
     if not row:
-        # Either this submitter has no ready tracks, or their only track would repeat
-        # and other submitters are available — advance to next submitter.
-        next_idx = (idx + 1) % len(submitters)
-        set_config("rotation_current_submitter_idx", str(next_idx))
-        set_config("rotation_current_block_count", "0")
+        # No available non-repeat track — advance to next submitter
+        _advance()
         return _pick_rotation_track()
 
-    # Advance block counter
-    new_block_count = block_count + 1
-    if new_block_count >= tracks_per_block:
-        next_idx = (idx + 1) % len(submitters)
-        set_config("rotation_current_submitter_idx", str(next_idx))
-        set_config("rotation_current_block_count", "0")
-    else:
-        set_config("rotation_current_block_count", str(new_block_count))
-
     set_config("last_returned_track_id", row["id"])
-    logger.info(f"Rotation: submitter={current_submitter} block={block_count}/{tracks_per_block}")
+    logger.info(f"Rotation: submitter={current_submitter} played_this_block={played_this_block}/{tracks_per_block}")
     return row["file_path"]
 
 

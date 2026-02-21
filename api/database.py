@@ -52,7 +52,7 @@ CONFIG_DEFAULTS = {
     "programming_mode": "rotation",
     "rotation_tracks_per_block": "3",
     "rotation_current_submitter_idx": "0",
-    "rotation_current_block_count": "0",
+    "rotation_block_start_log_id": "0",
     "skip_requested": "false",
     "last_returned_track_id": "",
     "feature_min_tempo_bpm": "0",
