@@ -76,10 +76,15 @@ The web player in `frontend/playing.html` embeds an `<audio>` element pointed di
 - **Port 8000 must be open**: the stream bypasses nginx, so the Icecast port needs to be reachable directly from the browser. In the AWS security group this means port 8000 must be open to the public (already noted in deployment TODOs).
 - **Buffering stalls vs user pauses**: the `pause` event fires for both. Use a `userPaused` flag (set to `true` in the click handler before calling `audio.pause()`, cleared on `play`) to distinguish them. Only accumulate behind-live lag and start the countdown timer when `userPaused` is true.
 
+## Frontend Admin Notes
+
+The admin library list (`frontend/admin.html`) is loaded once on login and does not auto-refresh (by design — the page is not intended to be a live dashboard). The one exception: while any track has `status='pending'`, a 5-second polling interval runs via `managePoll()` and refreshes the library until all tracks settle. `managePoll()` is called after every `loadLibrary()` and self-manages the interval (starts it when pending tracks exist, clears it when they're gone).
+
 ## Known Issues / Workarounds
 
 - **yt-dlp + Deno**: yt-dlp requires Deno as of late 2025. Deno is installed in `api/Dockerfile`.
 - **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}`. The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. The `SERVER_HOSTNAME` env var must be set in docker-compose.yml for nginx.
+- **`file.filename` is a string, not a bool**: In `api/routers/submit.py`, `has_file = file is not None and file.filename` evaluates to the filename string when a file is provided. Always wrap in `bool()` before using in arithmetic (e.g. `sum()`), otherwise a `TypeError: unsupported operand type(s) for +: 'int' and 'str'` will be raised.
 
 ## Secrets and Gitignored Files
 

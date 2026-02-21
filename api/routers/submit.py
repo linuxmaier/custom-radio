@@ -58,7 +58,7 @@ async def submit_track(
     submitter = submitter.strip()[:50]
 
     # Determine source
-    has_file = file is not None and file.filename
+    has_file = bool(file is not None and file.filename)
     has_youtube = youtube_url and youtube_url.strip()
 
     if sum([has_file, bool(has_youtube)]) != 1:

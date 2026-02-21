@@ -98,6 +98,8 @@
         successMsg: '',
         errorMsg: '',
 
+        pollTimer: null,
+
         async init() {
           if (this.tokenInput) {
             await this.login();
@@ -126,6 +128,19 @@
           const res = await fetch('/api/library');
           const data = await res.json();
           this.tracks = data.tracks;
+          this.managePoll();
+        },
+
+        managePoll() {
+          const hasPending = this.tracks.some(t => t.status === 'pending');
+          if (hasPending && !this.pollTimer) {
+            this.pollTimer = setInterval(async () => {
+              await this.loadLibrary();
+            }, 5000);
+          } else if (!hasPending && this.pollTimer) {
+            clearInterval(this.pollTimer);
+            this.pollTimer = null;
+          }
         },
 
         async setMode(mode) {
