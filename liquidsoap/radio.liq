@@ -4,7 +4,6 @@
 
 settings.init.allow_root.set(true)
 settings.server.timeout.set(30.)
-settings.request.metadata_decoders.set(["FFMPEG"])
 
 icecast_host = "icecast"
 icecast_port = 8000
