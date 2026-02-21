@@ -54,6 +54,7 @@ CONFIG_DEFAULTS = {
     "rotation_current_submitter_idx": "0",
     "rotation_current_block_count": "0",
     "skip_requested": "false",
+    "last_returned_track_id": "",
     "feature_min_tempo_bpm": "0",
     "feature_max_tempo_bpm": "1",
     "feature_min_rms_energy": "0",

@@ -44,7 +44,10 @@ def _pick_rotation_track() -> str:
     current_submitter = submitters[idx]
 
     # Pick the least-played ready track for this submitter, avoiding immediate repeats.
-    # First try excluding the globally last played track; fall back if no alternatives.
+    # Exclude both the last play_log entry AND the last track returned by the scheduler
+    # (last_returned_track_id), since the prefetch call can arrive before track-started
+    # has been logged to play_log.
+    last_returned_id = get_config("last_returned_track_id")
     with db() as conn:
         row = conn.execute(
             """
@@ -53,6 +56,7 @@ def _pick_rotation_track() -> str:
               AND t.id != COALESCE(
                   (SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1), ''
               )
+              AND t.id != ?
             ORDER BY (
                 SELECT COUNT(*) FROM play_log pl WHERE pl.track_id=t.id
             ) ASC,
@@ -62,7 +66,7 @@ def _pick_rotation_track() -> str:
             t.submitted_at ASC
             LIMIT 1
             """,
-            (current_submitter,),
+            (current_submitter, last_returned_id),
         ).fetchone()
 
         if not row and len(submitters) == 1:
@@ -100,6 +104,7 @@ def _pick_rotation_track() -> str:
     else:
         set_config("rotation_current_block_count", str(new_block_count))
 
+    set_config("last_returned_track_id", row["id"])
     logger.info(f"Rotation: submitter={current_submitter} block={block_count}/{tracks_per_block}")
     return row["file_path"]
 
@@ -177,6 +182,7 @@ def _pick_mood_track() -> str:
         # No candidates with features; try rotation
         return _pick_rotation_track()
 
+    best_id = None
     best_path = None
     best_dist = float("inf")
 
@@ -191,8 +197,11 @@ def _pick_mood_track() -> str:
         dist = euclidean_distance(last_vec, vec)
         if dist < best_dist:
             best_dist = dist
+            best_id = row["id"]
             best_path = row["file_path"]
 
+    if best_id:
+        set_config("last_returned_track_id", best_id)
     logger.info(f"Mood: picked track with distance={best_dist:.4f}")
     return best_path or ""
 
