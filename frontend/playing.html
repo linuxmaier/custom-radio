@@ -144,7 +144,7 @@
             audio.pause();
           } else {
             if (!this.everPlayed) {
-              audio.src = this.streamUrl;
+              audio.src = `${this.streamUrl}?t=${Date.now()}`;
             }
             audio.play().catch(() => {});
           }
@@ -159,7 +159,7 @@
           this.pausedSeconds = 0;
           this.totalBehindMs = 0;
           this.pausedAt = null;
-          audio.src = this.streamUrl;
+          audio.src = `${this.streamUrl}?t=${Date.now()}`;
           audio.play().catch(() => {});
         },
 

@@ -65,8 +65,8 @@ def _pick_rotation_track() -> str:
             (current_submitter,),
         ).fetchone()
 
-        if not row:
-            # Submitter's only ready track is the globally last played — allow repeat
+        if not row and len(submitters) == 1:
+            # Only one submitter — must allow the repeat
             row = conn.execute(
                 """
                 SELECT t.id, t.file_path FROM tracks t
@@ -84,7 +84,8 @@ def _pick_rotation_track() -> str:
             ).fetchone()
 
     if not row:
-        # This submitter has no ready tracks, advance to next
+        # Either this submitter has no ready tracks, or their only track would repeat
+        # and other submitters are available — advance to next submitter.
         next_idx = (idx + 1) % len(submitters)
         set_config("rotation_current_submitter_idx", str(next_idx))
         set_config("rotation_current_block_count", "0")
