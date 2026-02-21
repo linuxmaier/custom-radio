@@ -58,14 +58,6 @@ silence = blank(id="silence", duration=10.0)
 
 radio = fallback(id="radio", track_sensitive=true, [tracked, silence])
 
-radio = crossfade(
-  id="crossfaded",
-  duration=3.0,
-  fade_out=3.0,
-  fade_in=3.0,
-  radio
-)
-
 output.icecast(
   %mp3(bitrate=128, samplerate=44100, stereo=true),
   id="icecast_out",
