@@ -2,6 +2,7 @@
 
 # Family Radio Station - Liquidsoap script
 
+settings.init.allow_root.set(true)
 settings.server.timeout.set(30.)
 settings.request.metadata_decoders.set(["FFMPEG"])
 
@@ -9,36 +10,36 @@ icecast_host = "icecast"
 icecast_port = 8000
 icecast_password = environment.get("ICECAST_SOURCE_PASSWORD")
 api_base = "http://api:8000"
+server_hostname = environment.get("SERVER_HOSTNAME")
 
 def get_next_track() =
   log("Requesting next track from API...")
   result = try
     response = http.get("#{api_base}/internal/next-track", timeout=10.)
-    path = string.trim(response.contents)
+    path = string.trim(response)
     log("Next track: #{path}")
     if path == "" or string.length(path) == 0 then
       log("Empty path returned, using silence")
-      []
+      null()
     else
-      [request.create(path)]
+      request.create(path)
     end
   catch err do
     log("Error fetching next track: #{err}")
-    []
+    null()
   end
   result
 end
 
-dynamic = request.dynamic.list(
+dynamic = request.dynamic(
   id="dynamic",
   get_next_track,
-  conservative=true,
   timeout=20.
 )
 
 def on_track(m) =
   track_id = m["comment"]
-  if track_id != "" then
+  if not (track_id == "") then
     log("Track started: #{track_id}")
     try
       ignore(http.post(
@@ -52,7 +53,7 @@ def on_track(m) =
   end
 end
 
-tracked = source.on_metadata(on_track, dynamic)
+tracked = source.on_metadata(dynamic, on_track)
 
 silence = blank(id="silence", duration=10.0)
 
@@ -76,7 +77,7 @@ output.icecast(
   name="Family Radio",
   description="Our family radio station",
   genre="Various",
-  url="http://#{environment.get("SERVER_HOSTNAME")}",
+  url="http://#{server_hostname}",
   public=false,
   fallible=true,
   radio

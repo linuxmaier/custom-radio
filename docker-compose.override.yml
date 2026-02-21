@@ -1,0 +1,21 @@
+# Local development overrides. Do NOT commit .env or nginx/.htpasswd.
+# Before first run:
+#   cp .env.example .env          (then fill in passwords)
+#   htpasswd -cb nginx/.htpasswd family YOURPASS
+
+services:
+  liquidsoap:
+    environment:
+      - ICECAST_SOURCE_PASSWORD=${ICECAST_SOURCE_PASSWORD}
+      - SERVER_HOSTNAME=localhost
+
+  nginx:
+    volumes:
+      - ./nginx/local.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    environment:
+      - SERVER_HOSTNAME=localhost
+
+  certbot:
+    entrypoint: ["sh", "-c", "echo 'certbot disabled locally' && sleep infinity"]
