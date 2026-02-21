@@ -48,3 +48,33 @@ After the local test passes, deploy to a single EC2 instance.
 - [ ] Confirm nginx is not exposing `/internal/` routes externally
 - [ ] Set up a simple backup: daily cron to snapshot the SQLite DB and sync `/media` to S3 (or just snapshot the EBS volume)
 - [ ] Test that the certbot auto-renewal loop works (`docker compose logs certbot`)
+
+---
+
+## 3. Observability & Alerting
+
+### Automated health checks / integration tests
+- [ ] Endpoint liveness: `/api/status` returns 200 and a reasonable `now_playing` field
+- [ ] Download pipeline smoke test: submit a known-stable YouTube URL, poll until `status=ready`
+- [ ] Liquidsoap → Icecast: stream is reachable and producing audio bytes (not silence)
+- [ ] Metadata: ICY `StreamTitle` matches the track that `/api/status` says is playing
+
+### AWS-level alerting (CloudWatch or similar)
+- [ ] EC2 instance health check alarm
+- [ ] Disk usage alarm on the `/media` EBS volume (yt-dlp fills it up quietly)
+- [ ] HTTP 5xx rate alarm on nginx logs
+
+### Application-level alerting
+- [ ] Jobs stuck in `pending` longer than N minutes → indicates yt-dlp or yt-dlp dependency breakage
+- [ ] Track download failure rate (failed jobs / submitted jobs over a rolling window)
+- [ ] No-track-playing fallback: if Liquidsoap calls `/internal/next-track` and the library is empty, log a warning and alert
+- [ ] yt-dlp version check: periodically verify the installed version isn't months behind the latest release
+
+---
+
+## 4. Storage Management (Production)
+
+- [ ] Revisit the best approach for managing the `/media` partition in production
+  - Options include: EBS volume (simple, survives instance replacement), S3 + local cache (cheaper at scale, more complex), EFS (shared across instances, overkill for now)
+  - Consider a storage cap + eviction policy: e.g. delete least-recently-played tracks when disk usage exceeds a threshold
+  - Decide whether deleted tracks should be re-downloadable on demand or require re-submission
