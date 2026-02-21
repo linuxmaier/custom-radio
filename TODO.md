@@ -78,3 +78,22 @@ After the local test passes, deploy to a single EC2 instance.
   - Options include: EBS volume (simple, survives instance replacement), S3 + local cache (cheaper at scale, more complex), EFS (shared across instances, overkill for now)
   - Consider a storage cap + eviction policy: e.g. delete least-recently-played tracks when disk usage exceeds a threshold
   - Decide whether deleted tracks should be re-downloadable on demand or require re-submission
+
+---
+
+## 5. Future Features
+
+### Submission comments
+- [ ] Allow submitters to add an optional short comment when submitting a song (e.g. "this one always reminds me of summer road trips")
+  - Add `comment` field to the `tracks` table and `POST /submit` endpoint
+  - Show the comment on the Now Playing page alongside the submitter's name when the track is on air
+  - Include the comment in the AI DJ interlude script if that feature is built
+
+### AI DJ interludes
+- [ ] Periodically generate a short spoken interlude between tracks: recap the last few songs and who submitted them, then intro the next one
+  - Use a TTS model (e.g. OpenAI TTS or ElevenLabs) to synthesize the voice clip
+  - Use an LLM to write the script, given: last N track titles/artists/submitters, next track title/artist/submitter
+  - Generate the audio clip ahead of time (during the gap before the next track is needed) and store it in `/media`
+  - Liquidsoap schedules it as a regular audio file between two music tracks
+  - Decide on frequency: every N tracks, every N minutes, or weighted random
+  - Decide on persona/voice: consistent character, or vary it

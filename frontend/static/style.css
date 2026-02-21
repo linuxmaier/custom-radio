@@ -229,6 +229,29 @@ button.btn.secondary:hover { background: #3a3d4a; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--success);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: livepulse 1.5s ease-in-out infinite;
+}
+
+@keyframes livepulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 .empty-state {
   text-align: center;
   color: var(--muted);

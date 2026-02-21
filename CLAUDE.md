@@ -60,6 +60,15 @@ The script at `liquidsoap/radio.liq` targets **Liquidsoap 2.3.0** (`savonet/liqu
 - **`savonet/liquidsoap` image entrypoint**: the image ENTRYPOINT is `/usr/bin/tini -- /usr/bin/liquidsoap`. Any CMD args are passed directly to liquidsoap, not to a shell. Use `--entrypoint sh` when you need to run shell commands inside the container.
 - **`settings.request.metadata_decoders`**: do NOT set this. The default (TagLib) correctly reads ID3v2 tags including `comment`. Setting it to `["FFMPEG"]` silently fails ("Cannot find decoder FFMPEG") and leaves metadata unread, breaking `source.on_metadata` track ID lookups.
 
+## Frontend Player Notes
+
+The web player in `frontend/playing.html` embeds an `<audio>` element pointed directly at the Icecast stream (`hostname:8000/radio` — not proxied through nginx). Key behaviours to be aware of:
+
+- **Pausing a live HTTP stream causes the browser to buffer**: on resume, the listener is behind the live edge. There is no way to seek back to live — the only option is to reassign `audio.src` to force a fresh connection, which drops the buffer and rejoins at the current live point.
+- **The `pause` event fires multiple times**: browsers fire `pause` when buffering stalls as well as on user-initiated pauses. Always `clearInterval` any existing timer before starting a new one in the pause handler, or multiple timers will accumulate and fight over the displayed value.
+- **`audio.currentTime` is meaningless for live streams**: do not use it to measure lag. Track elapsed wall-clock time instead (store `Date.now()` at pause, accumulate into a `totalBehindMs` counter on resume).
+- **Port 8000 must be open**: the stream bypasses nginx, so the Icecast port needs to be reachable directly from the browser. In the AWS security group this means port 8000 must be open to the public (already noted in deployment TODOs).
+
 ## Known Issues / Workarounds
 
 - **spotdl instability** (Feb 2026): Spotify downloads fail intermittently. The submit endpoint wraps spotdl in try/except and returns a warning. Direct users to YouTube Music links.

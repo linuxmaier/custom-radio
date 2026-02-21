@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Family Radio — Now Playing</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body>
+  <nav>
+    <a class="logo" href="/">📻 Family Radio</a>
+    <a href="/">Submit</a>
+    <a href="/playing.html" class="active">Now Playing</a>
+    <a href="/admin.html">Admin</a>
+  </nav>
+
+  <div class="container" x-data="playerPage()" x-init="init()">
+    <h1>Now Playing</h1>
+
+    <!-- Player -->
+    <div class="card" style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+      <audio x-ref="audio" preload="none"></audio>
+
+      <button class="btn" style="font-size:1.1rem; min-width:7rem;" @click="togglePlay()">
+        <span x-text="playing ? '⏸ Pause' : '▶ Play'"></span>
+      </button>
+
+      <span x-show="playing && totalBehindMs === 0" class="live-indicator" x-cloak>
+        <span class="live-dot"></span> LIVE
+      </span>
+
+      <span x-show="everPlayed && (totalBehindMs > 0 || pausedAt !== null)" style="display:inline-flex; align-items:center; gap:0.6rem; color:var(--muted); font-size:0.875rem;" x-cloak>
+        <span x-show="pausedSeconds > 0">~<span x-text="pausedSeconds"></span>s behind live</span>
+        <button class="btn secondary" style="padding:0.3rem 0.8rem; font-size:0.8rem;" @click="backToLive()">↩ Back to Live</button>
+      </span>
+
+      <div style="display:flex; align-items:center; gap:0.4rem; margin-left:auto;">
+        <span style="opacity:0.5; font-size:0.9rem; line-height:1;">🔈</span>
+        <input type="range" min="0" max="1" step="0.05" x-model="volume" @input="setVolume()" style="width:80px; cursor:pointer;" />
+        <span style="opacity:0.5; font-size:0.9rem; line-height:1;">🔊</span>
+      </div>
+    </div>
+
+    <!-- Now Playing Info -->
+    <div x-show="nowPlaying" class="now-playing" x-cloak>
+      <div class="label">♪ On Air</div>
+      <div class="title" x-text="nowPlaying?.title"></div>
+      <div class="artist" x-text="nowPlaying?.artist"></div>
+      <div style="margin-top:0.5rem; font-size:0.8rem; color: var(--muted);">
+        Submitted by <strong x-text="nowPlaying?.submitter"></strong>
+      </div>
+    </div>
+
+    <div x-show="!nowPlaying && loaded" class="now-playing" x-cloak>
+      <div class="label">Station</div>
+      <div class="title">Starting up…</div>
+      <div class="artist" style="color:var(--muted)">Nothing playing yet. Submit a song!</div>
+    </div>
+
+    <!-- Pending count -->
+    <div x-show="pendingCount > 0" class="alert warning" x-cloak>
+      <span x-text="pendingCount"></span> song(s) processing in the background.
+    </div>
+
+    <!-- Recent Tracks -->
+    <div class="card" x-show="recent.length > 0" x-cloak>
+      <h2>Recently Played</h2>
+      <template x-for="track in recent" :key="track.id">
+        <div class="track-item">
+          <div class="track-meta">
+            <div class="track-title" x-text="track.title"></div>
+            <div class="track-sub">
+              <span x-text="track.artist"></span> · by <span x-text="track.submitter"></span>
+              · <span x-text="timeAgo(track.played_at)"></span>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <div x-show="recent.length === 0 && loaded" class="empty-state" x-cloak>
+      No play history yet.
+    </div>
+  </div>
+
+  <script>
+    function playerPage() {
+      return {
+        nowPlaying: null,
+        recent: [],
+        pendingCount: 0,
+        loaded: false,
+        playing: false,
+        everPlayed: false,
+        volume: 1,
+        pausedSeconds: 0,
+        pausedTimer: null,
+        pausedAt: null,
+        totalBehindMs: 0,
+        streamUrl: `${location.protocol}//${location.hostname}:8000/radio`,
+
+        async init() {
+          const audio = this.$refs.audio;
+          audio.volume = this.volume;
+
+          audio.addEventListener('play', () => {
+            this.playing = true;
+            this.everPlayed = true;
+            if (this.pausedAt !== null) {
+              this.totalBehindMs += Date.now() - this.pausedAt;
+              this.pausedAt = null;
+            }
+            if (this.pausedTimer) {
+              clearInterval(this.pausedTimer);
+              this.pausedTimer = null;
+            }
+            this.pausedSeconds = Math.floor(this.totalBehindMs / 1000);
+          });
+
+          audio.addEventListener('pause', () => {
+            this.playing = false;
+            if (this.pausedTimer) {
+              clearInterval(this.pausedTimer);
+              this.pausedTimer = null;
+            }
+            this.pausedAt = Date.now();
+            this.pausedTimer = setInterval(() => {
+              this.pausedSeconds = Math.floor((this.totalBehindMs + Date.now() - this.pausedAt) / 1000);
+            }, 1000);
+          });
+
+          audio.addEventListener('error', () => {
+            this.playing = false;
+          });
+
+          await this.refresh();
+          setInterval(() => this.refresh(), 15000);
+        },
+
+        togglePlay() {
+          const audio = this.$refs.audio;
+          if (this.playing) {
+            audio.pause();
+          } else {
+            if (!this.everPlayed) {
+              audio.src = this.streamUrl;
+            }
+            audio.play().catch(() => {});
+          }
+        },
+
+        backToLive() {
+          const audio = this.$refs.audio;
+          if (this.pausedTimer) {
+            clearInterval(this.pausedTimer);
+            this.pausedTimer = null;
+          }
+          this.pausedSeconds = 0;
+          this.totalBehindMs = 0;
+          this.pausedAt = null;
+          audio.src = this.streamUrl;
+          audio.play().catch(() => {});
+        },
+
+        setVolume() {
+          this.$refs.audio.volume = this.volume;
+        },
+
+        async refresh() {
+          try {
+            const res = await fetch('/api/status');
+            const data = await res.json();
+            this.nowPlaying = data.now_playing;
+            this.recent = data.recent;
+            this.pendingCount = data.pending_count;
+            this.loaded = true;
+          } catch (e) {
+            console.error('Status fetch failed', e);
+          }
+        },
+
+        timeAgo(isoStr) {
+          const diff = (Date.now() - new Date(isoStr)) / 1000;
+          if (diff < 60) return 'just now';
+          if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
+          if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
+          return `${Math.round(diff / 86400)}d ago`;
+        }
+      };
+    }
+  </script>
+</body>
+</html>
