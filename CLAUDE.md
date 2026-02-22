@@ -21,7 +21,9 @@ liquidsoap/   Liquidsoap script + Dockerfile
 icecast/      icecast.xml config
 nginx/        nginx template configs (default.conf.template = production HTTPS,
               local.conf.template = local HTTP only) + .htpasswd (gitignored)
-certbot/      Dockerfile extending certbot/certbot with docker-cli (for nginx reload deploy hook)
+certbot/      Dockerfile extending certbot/certbot with docker-cli + reload-nginx.sh script
+              (reload-nginx.sh finds the nginx container by its family-radio.service=nginx Docker
+              label and sends nginx -s reload; called by the certbot --deploy-hook after renewal)
 scripts/      Host-level scripts (backup.sh — daily S3 backup)
 ```
 
@@ -112,7 +114,7 @@ The admin page also has a **YouTube Cookies** card that shows whether a cookies 
   ```
   Git operations on the server must run as the `ubuntu` user: `sudo -u ubuntu git -C /home/ubuntu/radio pull`
 - **Repo location**: `/home/ubuntu/radio`
-- **TLS cert**: Let's Encrypt via certbot, expires 2026-05-23, auto-renewed by the certbot container every 12h; `--deploy-hook` sends SIGHUP to nginx after renewal (requires docker-cli in certbot image + Docker socket mounted)
+- **TLS cert**: Let's Encrypt via certbot, expires 2026-05-23, auto-renewed by the certbot container every 12h; `--deploy-hook` calls `reload-nginx` (baked into the certbot image), which finds the nginx container via the `family-radio.service=nginx` Docker label and sends `nginx -s reload`. Requires docker-cli in certbot image + Docker socket mounted read-only.
 
 ## Development Tips
 
