@@ -142,7 +142,11 @@
             const res = await fetch('/api/submit', { method: 'POST', body: fd });
             const data = await res.json();
             if (!res.ok) {
-              this.errorMsg = data.detail || 'Submission failed.';
+              if (res.status === 429) {
+                this.warning = data.detail;
+              } else {
+                this.errorMsg = data.detail || 'Submission failed.';
+              }
               return;
             }
             this.successTrackId = data.track_id;

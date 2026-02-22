@@ -15,6 +15,7 @@ router = APIRouter()
 MEDIA_DIR = os.environ.get("MEDIA_DIR", "/media")
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".opus"}
 MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB
+MAX_PENDING_PER_SUBMITTER = 5
 
 
 def _now() -> str:
@@ -56,6 +57,14 @@ async def submit_track(
         raise HTTPException(400, "submitter is required")
 
     submitter = submitter.strip()[:50]
+
+    with db() as conn:
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM tracks WHERE submitter=? AND status IN ('pending', 'processing')",
+            (submitter,)
+        ).fetchone()[0]
+    if pending >= MAX_PENDING_PER_SUBMITTER:
+        raise HTTPException(429, f"You already have {pending} songs being processed. Please wait for them to finish before adding more.")
 
     # Determine source
     has_file = bool(file is not None and file.filename)
