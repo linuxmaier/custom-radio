@@ -32,7 +32,6 @@ def get_admin_config(auth=Depends(require_admin)):
         "programming_mode": get_config("programming_mode"),
         "rotation_tracks_per_block": int(get_config("rotation_tracks_per_block")),
         "rotation_current_submitter_idx": int(get_config("rotation_current_submitter_idx")),
-        "rotation_current_block_count": int(get_config("rotation_current_block_count")),
     }
 
 
