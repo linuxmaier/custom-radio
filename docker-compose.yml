@@ -56,13 +56,15 @@ services:
       - certbot_conf:/etc/letsencrypt:ro
 
   certbot:
-    image: certbot/certbot
+    build: ./certbot
     volumes:
       - certbot_www:/var/www/certbot
       - certbot_conf:/etc/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     entrypoint: >
       sh -c "trap exit TERM; while :; do
-        certbot renew --webroot -w /var/www/certbot --quiet;
+        certbot renew --webroot -w /var/www/certbot --quiet
+          --deploy-hook 'docker exec radio-nginx-1 nginx -s reload';
         sleep 12h & wait $${!}; done"
 
 volumes:
