@@ -6,10 +6,10 @@ A self-hosted internet radio station for families to share music. Members submit
 
 Four Docker services:
 
-- **Icecast** — stream server listeners connect to at `http://domain:8000/radio`
+- **Icecast** — stream server; reachable only within the Docker network (port 8000 is not exposed externally)
 - **Liquidsoap** — programs the stream; asks the API for the next track and handles ICY metadata
 - **Python/FastAPI** — manages submissions, downloads, audio analysis, library, and scheduling
-- **Nginx** — reverse proxy for the web UI; handles HTTPS and HTTP Basic Auth
+- **Nginx** — reverse proxy for the web UI and audio stream; handles HTTPS and HTTP Basic Auth; proxies the stream at `/stream`
 
 ## Quick Start
 
@@ -45,10 +45,10 @@ docker compose up -d --build
 
 ### Verify
 
-- Icecast status: `http://domain:8000/status-json.xsl`
+- Icecast status (internal only): `docker exec radio-nginx-1 curl http://icecast:8000/status-json.xsl`
 - Submit a YouTube link via the web UI
 - Poll `GET /api/track/{id}` until `status: "ready"` (usually under 5 minutes)
-- Open VLC → Media → Open Network Stream → `https://domain:8000/radio`
+- Open VLC → Media → Open Network Stream → `https://family:passphrase@domain/stream`
 
 ## Web UI
 

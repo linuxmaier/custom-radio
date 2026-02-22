@@ -69,12 +69,11 @@ The script at `liquidsoap/radio.liq` targets **Liquidsoap 2.3.0** (`savonet/liqu
 
 ## Frontend Player Notes
 
-The web player in `frontend/playing.html` embeds an `<audio>` element pointed directly at the Icecast stream (`hostname:8000/radio` — not proxied through nginx). Key behaviours to be aware of:
+The web player in `frontend/playing.html` embeds an `<audio>` element pointed at the stream proxied through nginx at `hostname/stream` (Icecast port 8000 is closed in the AWS Security Group). VLC URL format: `https://family:passphrase@domain/stream`. Key behaviours to be aware of:
 
 - **Pausing a live HTTP stream causes the browser to buffer**: on resume, the listener is behind the live edge. There is no way to seek back to live — the only option is to reassign `audio.src` to force a fresh connection, which drops the buffer and rejoins at the current live point.
 - **The `pause` event fires multiple times**: browsers fire `pause` when buffering stalls as well as on user-initiated pauses. Always `clearInterval` any existing timer before starting a new one in the pause handler, or multiple timers will accumulate and fight over the displayed value.
 - **`audio.currentTime` is meaningless for live streams**: do not use it to measure lag. Track elapsed wall-clock time instead (store `Date.now()` at pause, accumulate into a `totalBehindMs` counter on resume).
-- **Port 8000 must be open**: the stream bypasses nginx, so the Icecast port needs to be reachable directly from the browser. In the AWS security group this means port 8000 must be open to the public (already noted in deployment TODOs).
 - **Buffering stalls vs user pauses**: the `pause` event fires for both. Use a `userPaused` flag (set to `true` in the click handler before calling `audio.pause()`, cleared on `play`) to distinguish them. Only accumulate behind-live lag and start the countdown timer when `userPaused` is true.
 
 ## Frontend Admin Notes

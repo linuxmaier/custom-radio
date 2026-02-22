@@ -46,6 +46,14 @@ server {
         client_max_body_size 200M;
     }
 
+    location /stream {
+        proxy_pass http://icecast:8000/radio;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
     location / {
         try_files $uri $uri.html $uri/ =404;
     }

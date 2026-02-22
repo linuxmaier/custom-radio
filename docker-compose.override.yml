@@ -4,6 +4,10 @@
 #   htpasswd -cb nginx/.htpasswd family YOURPASS
 
 services:
+  icecast:
+    ports:
+      - "8000:8000"
+
   liquidsoap:
     environment:
       - ICECAST_SOURCE_PASSWORD=${ICECAST_SOURCE_PASSWORD}
