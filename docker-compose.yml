@@ -29,6 +29,7 @@ services:
     volumes:
       - media:/media
       - db:/data
+      - ./cookies:/app/cookies
     environment:
       - ADMIN_TOKEN=${ADMIN_TOKEN}
       - DB_PATH=/data/radio.db

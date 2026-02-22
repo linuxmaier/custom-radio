@@ -6,6 +6,7 @@ import tempfile
 logger = logging.getLogger(__name__)
 
 MEDIA_DIR = os.environ.get("MEDIA_DIR", "/media")
+COOKIES_PATH = "/app/cookies/youtube.txt"
 
 
 def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
@@ -25,14 +26,24 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
         "--no-playlist",
         "--write-info-json",
         "--quiet",
-        url,
     ]
+
+    if os.path.exists(COOKIES_PATH):
+        cmd += ["--cookies", COOKIES_PATH]
+        logger.info("Using YouTube cookies")
+
+    cmd.append(url)
 
     logger.info(f"Downloading YouTube: {url}")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
     if result.returncode != 0:
-        raise RuntimeError(f"yt-dlp failed: {result.stderr}")
+        stderr = result.stderr
+        if "Sign in to confirm" in stderr or "bot" in stderr.lower():
+            raise RuntimeError(
+                "YouTube bot-check failed: upload fresh cookies.txt in the admin panel (Tools → YouTube Cookies)."
+            )
+        raise RuntimeError(f"yt-dlp failed: {stderr}")
 
     output_path = os.path.join(MEDIA_DIR, "raw", f"{track_id}.mp3")
     info_path = os.path.join(MEDIA_DIR, "raw", f"{track_id}.info.json")

@@ -1,6 +1,7 @@
 # Secrets
 .env
 nginx/.htpasswd
+cookies/
 
 # Local dev override (gitignored so it is never restored to the server by git pull)
 # Copy docker-compose.override.yml.example to docker-compose.override.yml for local dev.

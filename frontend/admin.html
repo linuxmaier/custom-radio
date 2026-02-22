@@ -61,6 +61,32 @@
         <button class="btn" @click="skip()">⏭ Skip Current Track</button>
       </div>
 
+      <!-- YouTube Cookies -->
+      <div class="card">
+        <h2>YouTube Cookies</h2>
+        <p style="color:var(--muted); font-size:0.875rem; margin-bottom:1rem">
+          YouTube downloads from AWS IPs require cookies from a signed-in account.
+          Upload a <code>cookies.txt</code> (Netscape format) exported from a browser.
+          Refresh when submissions fail with a bot-check error.
+        </p>
+        <p style="font-size:0.875rem; margin-bottom:1rem">
+          Status:
+          <span x-show="cookieStatus === null" style="color:var(--muted)">loading…</span>
+          <span x-show="cookieStatus !== null && cookieStatus.present"
+                style="color:var(--success)">
+            ✓ Cookies present
+            <span x-show="cookieStatus.updated_at" style="color:var(--muted)"
+                  x-text="' (updated ' + new Date(cookieStatus.updated_at).toLocaleDateString() + ')'"></span>
+          </span>
+          <span x-show="cookieStatus !== null && !cookieStatus.present"
+                style="color:var(--danger)">✗ No cookies — YouTube downloads will fail on AWS</span>
+        </p>
+        <div style="display:flex; gap:0.75rem; align-items:center">
+          <input type="file" x-ref="cookieFile" accept=".txt" style="font-size:0.875rem" />
+          <button class="btn" @click="uploadCookies()">Upload cookies.txt</button>
+        </div>
+      </div>
+
       <!-- Library -->
       <div class="card">
         <h2>Library (<span x-text="tracks.length"></span> tracks)</h2>
@@ -95,6 +121,7 @@
         authError: '',
         config: {},
         tracks: [],
+        cookieStatus: null,
         successMsg: '',
         errorMsg: '',
 
@@ -115,6 +142,7 @@
               this.authed = true;
               localStorage.setItem('adminToken', this.tokenInput);
               await this.loadLibrary();
+              await this.loadCookieStatus();
             } else {
               this.authError = 'Invalid token.';
               localStorage.removeItem('adminToken');
@@ -169,6 +197,29 @@
             this.flash('success', 'Skip requested — next track incoming.');
           } else {
             this.flash('error', 'Failed to skip.');
+          }
+        },
+
+        async loadCookieStatus() {
+          const res = await this.apiGet('/api/admin/youtube-cookies/status');
+          if (res.ok) this.cookieStatus = await res.json();
+        },
+
+        async uploadCookies() {
+          const file = this.$refs.cookieFile.files[0];
+          if (!file) { this.flash('error', 'Select a cookies.txt file first.'); return; }
+          const form = new FormData();
+          form.append('file', file);
+          const res = await fetch('/api/admin/youtube-cookies', {
+            method: 'POST',
+            headers: { 'X-Admin-Token': this.tokenInput },
+            body: form,
+          });
+          if (res.ok) {
+            this.flash('success', 'Cookies uploaded.');
+            await this.loadCookieStatus();
+          } else {
+            this.flash('error', 'Upload failed.');
           }
         },
 

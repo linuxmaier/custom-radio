@@ -1,12 +1,15 @@
 import os
 import socket
 import logging
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from database import db, get_config, set_config
+
+COOKIES_PATH = "/app/cookies/youtube.txt"
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -74,6 +77,29 @@ def request_skip(auth=Depends(require_admin)):
     except Exception as e:
         logger.error(f"Skip failed: {e}")
         raise HTTPException(503, "Could not reach Liquidsoap")
+    return {"ok": True}
+
+
+@router.get("/admin/youtube-cookies/status")
+def youtube_cookies_status(auth=Depends(require_admin)):
+    """Check whether a YouTube cookies file is present."""
+    exists = os.path.exists(COOKIES_PATH)
+    updated_at = None
+    if exists:
+        updated_at = datetime.fromtimestamp(
+            os.path.getmtime(COOKIES_PATH), timezone.utc
+        ).isoformat()
+    return {"present": exists, "updated_at": updated_at}
+
+
+@router.post("/admin/youtube-cookies")
+async def upload_youtube_cookies(file: UploadFile = File(...), auth=Depends(require_admin)):
+    """Upload a YouTube cookies.txt file (Netscape format) to enable downloads from AWS IPs."""
+    os.makedirs(os.path.dirname(COOKIES_PATH), exist_ok=True)
+    content = await file.read()
+    with open(COOKIES_PATH, "wb") as f:
+        f.write(content)
+    logger.info("YouTube cookies updated")
     return {"ok": True}
 
 
