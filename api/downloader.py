@@ -26,6 +26,7 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
         "--no-playlist",
         "--write-info-json",
         "--quiet",
+        "--remote-components", "ejs:github",
     ]
 
     if os.path.exists(COOKIES_PATH):
