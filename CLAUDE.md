@@ -10,6 +10,7 @@ Self-hosted internet radio station. Four Docker services: Icecast (stream), Liqu
 - **Background worker thread** in `api/worker.py`: polls `jobs` table every 5s. Do not convert to async tasks — the librosa/ffmpeg work is CPU-bound and blocking.
 - **All scheduling logic in Python**: Liquidsoap only asks "what's next?" — it does not make programming decisions. Keep it this way.
 - **Single audio format**: all tracks are converted to MP3/128kbps by ffmpeg. Do not introduce format variations.
+- **DB is source of truth for track metadata**: `title` and `artist` live in the `tracks` table, not in MP3 tags. `/internal/next-track` returns a Liquidsoap annotate URI (`annotate:title="...",artist="...":file_path`) so Liquidsoap gets metadata from the API response and sets ICY StreamTitle correctly without reading any file tags. MP3 files also have `title` and `artist` ID3 tags written by ffmpeg during conversion as a recovery aid in case the DB is ever lost — they are not read at runtime.
 
 ## Project Structure
 
@@ -25,7 +26,7 @@ nginx/        nginx template config + .htpasswd (gitignored)
 
 Routers in `api/routers/`:
 - `submit.py`   — POST /submit
-- `internal.py` — GET /internal/next-track, POST /internal/track-started/{id}
+- `internal.py` — GET /internal/next-track (returns annotate URI with title/artist from DB), POST /internal/track-started/{id}
 - `admin.py`    — GET/POST /admin/config, POST /admin/skip, DELETE /admin/track/{id}
 - `status.py`   — GET /status, GET /library, GET /track/{id}
 

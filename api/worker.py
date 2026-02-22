@@ -76,7 +76,7 @@ def _process_job(job_id: int, track_id: str):
             raise RuntimeError(f"Unknown source_type: {source_type}")
 
         # Convert to standard MP3 with track_id embedded as comment tag
-        final_path = convert_to_standard_mp3(raw_path, track_id, track_id)
+        final_path = convert_to_standard_mp3(raw_path, track_id, track_id, title=title or "", artist=artist or "")
 
         # Extract audio features
         features = extract_features(final_path)

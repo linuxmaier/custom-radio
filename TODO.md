@@ -6,18 +6,18 @@ Get the full stack running locally to validate the end-to-end flow before touchi
 
 ### Adjustments needed for local running
 - [x] Add a `docker-compose.override.yml` for local use: skip certbot, serve nginx on HTTP only (no TLS), and remove the HTTPS server block (or use a self-signed cert)
-- [ ] Confirm the `moul/icecast` image actually accepts the env-variable-style config in `icecast.xml` — it may need a different base image or a startup script to substitute values
+- [x] Confirm the `moul/icecast` image actually accepts the env-variable-style config in `icecast.xml` — it may need a different base image or a startup script to substitute values
 
 ### Smoke test checklist
-- [ ] `docker compose up --build` completes without errors
-- [ ] Icecast status page responds at `http://localhost:8000/status-json.xsl`
-- [ ] Liquidsoap connects to Icecast (check `docker compose logs liquidsoap`)
-- [ ] Web UI loads at `http://localhost` (or whichever port nginx is on locally)
-- [ ] Submit a YouTube link → track appears in library as `pending`
-- [ ] Track transitions to `ready` within a few minutes
-- [ ] `GET /api/status` shows the track as now-playing after Liquidsoap picks it up
-- [ ] VLC can connect to `http://localhost:8000/radio` and plays audio
-- [ ] ICY metadata (artist/title) shows in VLC's Media Information window
+- [x] `docker compose up --build` completes without errors
+- [x] Icecast status page responds at `http://localhost:8000/status-json.xsl`
+- [x] Liquidsoap connects to Icecast (check `docker compose logs liquidsoap`)
+- [x] Web UI loads at `http://localhost` (or whichever port nginx is on locally)
+- [x] Submit a YouTube link → track appears in library as `pending`
+- [x] Track transitions to `ready` within a few minutes
+- [x] `GET /api/status` shows the track as now-playing after Liquidsoap picks it up
+- [x] VLC can connect to `http://localhost:8000/radio` and plays audio
+- [x] ICY metadata (artist/title) shows in VLC's Media Information window
 - [x] Admin page: switch mode to Mood, verify next track changes without a restart
 - [x] Admin page: skip button advances to the next track
 - [x] Admin auth via `X-Admin-Token` header works correctly

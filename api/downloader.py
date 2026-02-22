@@ -63,9 +63,9 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
 
 
 
-def convert_to_standard_mp3(input_path: str, track_id: str, comment_tag: str) -> str:
+def convert_to_standard_mp3(input_path: str, track_id: str, comment_tag: str, title: str = "", artist: str = "") -> str:
     """
-    Convert any audio file to standard MP3/128kbps with ID3 comment tag.
+    Convert any audio file to standard MP3/128kbps with ID3 tags.
     Returns the output path.
     """
     output_dir = os.path.join(MEDIA_DIR, "tracks")
@@ -82,6 +82,8 @@ def convert_to_standard_mp3(input_path: str, track_id: str, comment_tag: str) ->
         "-ac", "2",
         "-id3v2_version", "3",
         "-metadata", f"comment={comment_tag}",
+        "-metadata", f"title={title}",
+        "-metadata", f"artist={artist}",
         "-y",
         output_path,
     ]

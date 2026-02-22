@@ -7,20 +7,18 @@ from audio import normalize_features, euclidean_distance, AudioFeatures
 logger = logging.getLogger(__name__)
 
 
-def get_next_track_path() -> str:
+def get_next_track() -> dict | None:
     """
-    Main scheduling entry point. Returns the file path of the next track to play,
-    or empty string if nothing is ready.
+    Main scheduling entry point. Returns a dict with id/title/artist/file_path
+    for the next track to play, or None if nothing is ready.
     """
     mode = get_config("programming_mode")
     logger.info(f"Scheduling mode: {mode}")
 
     if mode == "mood":
-        path = _pick_mood_track()
+        return _pick_mood_track()
     else:
-        path = _pick_rotation_track()
-
-    return path or ""
+        return _pick_rotation_track()
 
 
 def _pick_rotation_track() -> str:
@@ -32,7 +30,7 @@ def _pick_rotation_track() -> str:
         submitters = [r["submitter"] for r in rows]
 
     if not submitters:
-        return ""
+        return None
 
     idx = int(get_config("rotation_current_submitter_idx")) % len(submitters)
     tracks_per_block = int(get_config("rotation_tracks_per_block"))
@@ -84,7 +82,7 @@ def _pick_rotation_track() -> str:
 
         row = conn.execute(
             """
-            SELECT t.id, t.file_path FROM tracks t
+            SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
             WHERE t.submitter=? AND t.status='ready'
               AND t.id != ?
               AND t.id != ?
@@ -104,7 +102,7 @@ def _pick_rotation_track() -> str:
             # Only one submitter — must allow the repeat
             row = conn.execute(
                 """
-                SELECT t.id, t.file_path FROM tracks t
+                SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
                 WHERE t.submitter=? AND t.status='ready'
                 ORDER BY (
                     SELECT COUNT(*) FROM play_log pl WHERE pl.track_id=t.id
@@ -125,7 +123,7 @@ def _pick_rotation_track() -> str:
 
     set_config("last_returned_track_id", row["id"])
     logger.info(f"Rotation: submitter={current_submitter} played_this_block={played_this_block}/{tracks_per_block}")
-    return row["file_path"]
+    return {"id": row["id"], "title": row["title"], "artist": row["artist"], "file_path": row["file_path"]}
 
 
 def _pick_mood_track() -> str:
@@ -184,7 +182,7 @@ def _pick_mood_track() -> str:
     with db() as conn:
         rows = conn.execute(
             f"""
-            SELECT t.id, t.file_path, t.tempo_bpm, t.rms_energy,
+            SELECT t.id, t.title, t.artist, t.file_path, t.tempo_bpm, t.rms_energy,
                    t.spectral_centroid, t.zero_crossing_rate
             FROM tracks t
             WHERE t.status='ready' AND t.tempo_bpm IS NOT NULL
@@ -202,6 +200,8 @@ def _pick_mood_track() -> str:
         return _pick_rotation_track()
 
     best_id = None
+    best_title = None
+    best_artist = None
     best_path = None
     best_dist = float("inf")
 
@@ -217,12 +217,15 @@ def _pick_mood_track() -> str:
         if dist < best_dist:
             best_dist = dist
             best_id = row["id"]
+            best_title = row["title"]
+            best_artist = row["artist"]
             best_path = row["file_path"]
 
-    if best_id:
-        set_config("last_returned_track_id", best_id)
+    if not best_id:
+        return None
+    set_config("last_returned_track_id", best_id)
     logger.info(f"Mood: picked track with distance={best_dist:.4f}")
-    return best_path or ""
+    return {"id": best_id, "title": best_title, "artist": best_artist, "file_path": best_path}
 
 
 def update_feature_bounds(features: AudioFeatures):

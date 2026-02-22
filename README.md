@@ -152,6 +152,6 @@ The tradeoff: without a burst, playback on connect depends entirely on live audi
 
 - **SQLite WAL mode** with a single uvicorn worker avoids write contention without needing Redis/Postgres.
 - **Background worker**: a single daemon thread polls the `jobs` table every 5 seconds. No Celery needed at family scale.
-- **Track identity**: each MP3 has its UUID written into the ID3 `comment` tag by ffmpeg during processing. Liquidsoap reads this tag back to call `/internal/track-started/{id}`.
+- **Track identity**: each MP3 has its UUID written into the ID3 `comment` tag by ffmpeg during processing. Liquidsoap reads this tag back via TagLib to call `/internal/track-started/{id}`. Title and artist are **not** read from file tags at runtime — `/internal/next-track` returns a Liquidsoap annotate URI (`annotate:title="...",artist="...":file_path`) so the DB is the source of truth for display metadata. MP3 files also have `title` and `artist` tags written as a recovery aid if the DB is ever lost.
 - **TLS renewal**: the certbot container runs `certbot renew` every 12 hours automatically.
 - **yt-dlp** requires Deno as of late 2025; the API Dockerfile installs it.
