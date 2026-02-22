@@ -29,17 +29,14 @@ $EDITOR .env
 # 2. Generate the site password file
 htpasswd -cb nginx/.htpasswd family YOUR_PASSPHRASE
 
-# 3. Remove the local dev override (IMPORTANT — must not exist on the server)
-rm docker-compose.override.yml
-
-# 4. Get a TLS certificate before starting (chicken-and-egg: nginx needs the cert to start)
+# 3. Get a TLS certificate before starting (chicken-and-egg: nginx needs the cert to start)
 docker run --rm -p 80:80 \
   -v $(basename $(pwd))_certbot_conf:/etc/letsencrypt \
   certbot/certbot certonly --standalone \
   -d your.domain.com \
   --email you@example.com --agree-tos --no-eff-email
 
-# 5. Build and start
+# 4. Build and start
 docker compose up -d --build
 ```
 
@@ -49,6 +46,24 @@ docker compose up -d --build
 - Submit a YouTube link via the web UI
 - Poll `GET /api/track/{id}` until `status: "ready"` (usually under 5 minutes)
 - Open VLC → Media → Open Network Stream → `https://family:passphrase@domain/stream`
+
+## Local Development
+
+`docker-compose.override.yml` is gitignored so it is never present on the server. For local development, copy the example file before running:
+
+```bash
+# 1. Copy secrets and generate .htpasswd (same as production)
+cp .env.example .env && $EDITOR .env
+htpasswd -cb nginx/.htpasswd family YOUR_PASSPHRASE
+
+# 2. Set up the local override
+cp docker-compose.override.yml.example docker-compose.override.yml
+
+# 3. Start (no TLS needed — nginx uses the HTTP-only local config)
+docker compose up --build
+```
+
+The override does three things: uses `nginx/local.conf.template` (HTTP on port 80, no TLS), sets `SERVER_HOSTNAME=localhost`, and exposes Icecast on port 8000 for debugging. The site is then reachable at `http://localhost`.
 
 ## Web UI
 

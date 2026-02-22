@@ -84,7 +84,7 @@ The admin library list (`frontend/admin.html`) is loaded once on login and does 
 
 - **yt-dlp + Deno**: yt-dlp requires Deno as of late 2025. Deno is installed in `api/Dockerfile`.
 - **YouTube downloads blocked on AWS**: yt-dlp gets "Sign in to confirm you're not a bot" from AWS datacenter IPs. Fix: pass cookies from a signed-in YouTube session via `--cookies /app/cookies/youtube.txt`. Use a throwaway Google account. See TODO.md §6 for full implementation steps. File upload works as a fallback in the meantime.
-- **`docker-compose.override.yml` must not exist on the production server**: This file is for local dev only (disables certbot, uses HTTP-only nginx). If it is present on the server, certbot will be silently disabled and nginx will use the local config. Delete it after cloning: `rm docker-compose.override.yml`.
+- **`docker-compose.override.yml` is gitignored**: local dev only (disables certbot, uses HTTP-only nginx, exposes Icecast port 8000). Copy `docker-compose.override.yml.example` to use it locally. It is not present on the production server and will not be restored by `git pull`.
 - **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}`. The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. The `SERVER_HOSTNAME` env var must be set in docker-compose.yml for nginx.
 - **`file.filename` is a string, not a bool**: In `api/routers/submit.py`, `has_file = file is not None and file.filename` evaluates to the filename string when a file is provided. Always wrap in `bool()` before using in arithmetic (e.g. `sum()`), otherwise a `TypeError: unsupported operand type(s) for +: 'int' and 'str'` will be raised.
 

@@ -2,6 +2,10 @@
 .env
 nginx/.htpasswd
 
+# Local dev override (gitignored so it is never restored to the server by git pull)
+# Copy docker-compose.override.yml.example to docker-compose.override.yml for local dev.
+docker-compose.override.yml
+
 # Local management info (instance IDs, access details — not for the repo)
 MANAGEMENT.md
 

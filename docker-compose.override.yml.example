@@ -1,7 +1,11 @@
-# Local development overrides. Do NOT commit .env or nginx/.htpasswd.
-# Before first run:
-#   cp .env.example .env          (then fill in passwords)
-#   htpasswd -cb nginx/.htpasswd family YOURPASS
+# Local development overrides — copy this to docker-compose.override.yml before running locally.
+# This file is gitignored so it is never present on the production server.
+#
+# What this does:
+#   - Exposes Icecast port 8000 directly (for debugging; not needed for the stream itself)
+#   - Uses the HTTP-only nginx config (no TLS/certbot needed locally)
+#   - Sets SERVER_HOSTNAME=localhost
+#   - Disables the certbot renewal container
 
 services:
   icecast:
