@@ -124,6 +124,72 @@ See `.env.example` for the full list:
 | `ADMIN_TOKEN` | Token for admin API endpoints (sent via `X-Admin-Token` header) |
 | `SITE_USER` | HTTP Basic Auth username (default: `family`) |
 | `SITE_PASSPHRASE` | HTTP Basic Auth password |
+| `BACKUP_DEST` | Backup destination (e.g. `s3://your-bucket`); leave unset to disable backups |
+| `BACKUP_ENDPOINT_URL` | S3-compatible endpoint URL (optional; for non-AWS providers) |
+
+## Backups
+
+`scripts/backup.sh` backs up the SQLite database and processed MP3s to any S3-compatible object store. Backups are opt-in — nothing runs unless `BACKUP_DEST` is set in `.env`.
+
+### Prerequisites
+
+- AWS CLI v2 installed on the **host** (not inside Docker — the script runs as a cron job on the host)
+- An S3 bucket (or equivalent) with write access granted to the host
+
+For AWS: attach an IAM policy granting `s3:PutObject` and `s3:GetObject` on your bucket to the instance role (or configure `~/.aws/credentials` with an IAM user).
+
+For S3-compatible providers (Cloudflare R2, Backblaze B2, Wasabi, DigitalOcean Spaces, etc.): the AWS CLI works with any of these via `--endpoint-url`. No AWS account needed.
+
+### Configuration
+
+Add to `.env`:
+
+```bash
+BACKUP_DEST=s3://your-bucket-name
+
+# Only needed for non-AWS S3-compatible stores:
+# BACKUP_ENDPOINT_URL=https://endpoint.example.com
+```
+
+The script sources `.env` automatically, so no changes to the cron job are needed when updating these values.
+
+### Cron setup
+
+```bash
+# Install the cron job (runs daily at 03:00 UTC as root)
+echo "0 3 * * * root /path/to/radio/scripts/backup.sh" > /etc/cron.d/radio-backup
+
+# Trigger a manual run to verify
+/path/to/radio/scripts/backup.sh
+tail /var/log/radio-backup.log
+```
+
+### What gets backed up
+
+- **Database**: a safe point-in-time snapshot taken via Python's `sqlite3.Connection.backup()` (WAL-safe). Stored as timestamped files plus a `radio-latest.db` alias for quick restore.
+- **Media**: an incremental sync of processed MP3s. Files are never deleted from the backup destination, so accidentally removed tracks remain recoverable.
+
+### Restore DB
+
+```bash
+aws s3 cp s3://your-bucket/db/radio-latest.db /tmp/radio-restore.db
+docker cp /tmp/radio-restore.db radio-api-1:/data/radio.db
+docker compose restart api
+```
+
+To restore from a specific date: `aws s3 ls s3://your-bucket/db/` to list available snapshots.
+
+### Restore media
+
+```bash
+# Full restore
+aws s3 sync s3://your-bucket/media/tracks/ \
+  /var/lib/docker/volumes/radio_media/_data/tracks/
+
+# Single track
+aws s3 cp s3://your-bucket/media/tracks/TRACK_ID.mp3 \
+  /var/lib/docker/volumes/radio_media/_data/tracks/TRACK_ID.mp3
+```
 
 ## Project Structure
 
@@ -163,7 +229,7 @@ family-radio/
 │   └── static/
 │       └── style.css
 └── scripts/
-    └── backup.sh               # daily S3 backup (DB + media)
+    └── backup.sh               # daily backup script (DB + media; see Backups section)
 ```
 
 ## Development Choices
