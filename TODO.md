@@ -5,7 +5,7 @@
 Get the full stack running locally to validate the end-to-end flow before touching a server.
 
 ### Adjustments needed for local running
-- [ ] Add a `docker-compose.override.yml` for local use: skip certbot, serve nginx on HTTP only (no TLS), and remove the HTTPS server block (or use a self-signed cert)
+- [x] Add a `docker-compose.override.yml` for local use: skip certbot, serve nginx on HTTP only (no TLS), and remove the HTTPS server block (or use a self-signed cert)
 - [ ] Confirm the `moul/icecast` image actually accepts the env-variable-style config in `icecast.xml` — it may need a different base image or a startup script to substitute values
 
 ### Smoke test checklist
@@ -18,8 +18,9 @@ Get the full stack running locally to validate the end-to-end flow before touchi
 - [ ] `GET /api/status` shows the track as now-playing after Liquidsoap picks it up
 - [ ] VLC can connect to `http://localhost:8000/radio` and plays audio
 - [ ] ICY metadata (artist/title) shows in VLC's Media Information window
-- [ ] Admin page: switch mode to Mood, verify next track changes without a restart
-- [ ] Admin page: skip button advances to the next track
+- [x] Admin page: switch mode to Mood, verify next track changes without a restart
+- [x] Admin page: skip button advances to the next track
+- [x] Admin auth via `X-Admin-Token` header works correctly
 
 ---
 

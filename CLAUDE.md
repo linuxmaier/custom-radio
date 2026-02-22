@@ -93,6 +93,8 @@ The admin library list (`frontend/admin.html`) is loaded once on login and does 
 
 ## Development Tips
 
+- **Local full-stack**: `docker compose up --build` — `docker-compose.override.yml` is automatically applied and handles local differences (HTTP-only nginx, certbot disabled, `SERVER_HOSTNAME=localhost`)
+- **nginx config templates**: two templates exist — `nginx/default.conf.template` (production, HTTPS + certbot) and `nginx/local.conf.template` (local, HTTP only). The override file maps the local one into the nginx container.
 - To test the API locally without Docker: `cd api && uvicorn main:app --reload`
   Set env vars: `ADMIN_TOKEN=dev DB_PATH=./radio.db MEDIA_DIR=./media`
 - To rebuild after Python changes: `docker compose up -d --build api`
