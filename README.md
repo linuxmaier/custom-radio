@@ -29,14 +29,18 @@ $EDITOR .env
 # 2. Generate the site password file
 htpasswd -cb nginx/.htpasswd family YOUR_PASSPHRASE
 
-# 3. Build and start
-docker compose up -d --build
+# 3. Remove the local dev override (IMPORTANT — must not exist on the server)
+rm docker-compose.override.yml
 
-# 4. Get a TLS certificate (first time only)
-docker compose run --rm certbot certonly \
-  --webroot -w /var/www/certbot \
-  -d radio.yourfamily.com \
+# 4. Get a TLS certificate before starting (chicken-and-egg: nginx needs the cert to start)
+docker run --rm -p 80:80 \
+  -v $(basename $(pwd))_certbot_conf:/etc/letsencrypt \
+  certbot/certbot certonly --standalone \
+  -d your.domain.com \
   --email you@example.com --agree-tos --no-eff-email
+
+# 5. Build and start
+docker compose up -d --build
 ```
 
 ### Verify
@@ -70,6 +74,8 @@ Upload MP3, WAV, FLAC, M4A, OGG, or OPUS files up to 200MB.
 
 ### YouTube
 Paste any YouTube video URL. Title and artist are extracted from the video metadata.
+
+> **Note**: YouTube blocks yt-dlp requests from cloud/datacenter IP ranges (AWS, GCP, etc.). If YouTube submissions fail with a "Sign in to confirm you're not a bot" error, you need to supply cookies from a signed-in YouTube session. See TODO.md for the full setup steps. File upload works as a fallback.
 
 ## API Reference
 

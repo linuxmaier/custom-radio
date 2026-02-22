@@ -29,22 +29,22 @@ Get the full stack running locally to validate the end-to-end flow before touchi
 After the local test passes, deploy to a single EC2 instance.
 
 ### Infrastructure decisions to make
-- [ ] Choose instance type (t3.small is probably enough; t3.medium if librosa analysis feels slow)
-- [ ] Decide on storage: default EBS root volume is fine for the DB; add a separate EBS volume for `/media` so it survives instance replacement
-- [ ] Pick a domain and set up Route 53 (or point an existing domain's A record at the instance IP)
-- [ ] Decide whether to use an Elastic IP (recommended so the IP doesn't change on restart)
+- [x] Choose instance type → t3.small
+- [x] Decide on storage → 30GB gp3 root volume (no separate EBS; migration is just an rsync anyway)
+- [x] Pick a domain → `radio-maier.live`, registered at Porkbun, DNS A record pointing to Elastic IP (no Route 53)
+- [x] Decide whether to use an Elastic IP → yes, allocated and associated
 
 ### Deployment steps
-- [ ] Launch EC2 instance (Ubuntu 24.04 LTS), install Docker + Docker Compose plugin
-- [ ] Open security group ports: 22 (SSH), 80 (HTTP), 443 (HTTPS), 8000 (Icecast stream)
-- [ ] Clone repo to instance, copy `.env.example` → `.env`, fill in real secrets
-- [ ] Generate `.htpasswd`: `htpasswd -cb nginx/.htpasswd family PASSPHRASE`
-- [ ] `docker compose up -d --build`
-- [ ] Run certbot to get TLS cert for the domain
-- [ ] Verify HTTPS and stream, run the same smoke test checklist as above
+- [x] Launch EC2 instance (Ubuntu 24.04 LTS, t3.small, us-west-2), install Docker + Docker Compose plugin
+- [x] Open security group ports: 80 (HTTP), 443 (HTTPS), 8000 (Icecast stream) — no SSH; using SSM Session Manager instead
+- [x] Clone repo to instance, copy `.env.example` → `.env`, fill in real secrets
+- [x] Generate `.htpasswd`: `htpasswd -cb nginx/.htpasswd family PASSPHRASE`
+- [x] `docker compose up -d --build`
+- [x] Run certbot to get TLS cert for the domain
+- [x] Verify HTTPS and stream — HTTPS ✓, VLC stream ✓, file upload ✓, admin panel ✓; YouTube submissions fail from AWS datacenter IP (see §7)
 
 ### Things to harden before sharing the link with family
-- [ ] Set a strong `SITE_PASSPHRASE` and `ADMIN_TOKEN` in `.env`
+- [x] Set a strong `SITE_PASSPHRASE` and `ADMIN_TOKEN` in `.env`
 - [ ] Confirm nginx is not exposing `/internal/` routes externally
 - [ ] Set up a simple backup: daily cron to snapshot the SQLite DB and sync `/media` to S3 (or just snapshot the EBS volume)
 - [ ] Test that the certbot auto-renewal loop works (`docker compose logs certbot`)
@@ -103,6 +103,20 @@ After the local test passes, deploy to a single EC2 instance.
   - Re-add spotdl to `api/Dockerfile` (`pip install spotdl`)
   - Re-add Spotify tab to `frontend/index.html`
   - Consider wrapping in try/except and surfacing a user-friendly warning if download fails
+
+### YouTube downloads from production server
+
+YouTube blocks yt-dlp requests from AWS datacenter IP ranges with a "Sign in to confirm you're not a bot" error. The fix is to pass cookies from a signed-in YouTube session. Use a throwaway Google account to avoid risk to your main account.
+
+- [ ] Create a dedicated/throwaway Google account for this purpose
+- [ ] Sign into YouTube with that account in a browser
+- [ ] Export youtube.com cookies using the "Get cookies.txt LOCALLY" browser extension (Netscape format)
+- [ ] Add `cookies/` to `.gitignore`
+- [ ] Upload `cookies.txt` to the server at `/home/ubuntu/radio/cookies/youtube.txt`
+- [ ] Mount `./cookies:/app/cookies:ro` into the api container in `docker-compose.yml`
+- [ ] Add `"--cookies", "/app/cookies/youtube.txt"` to the yt-dlp command in `api/downloader.py`
+- [ ] Rebuild and test: submit a YouTube link and confirm it downloads
+- [ ] Document cookie refresh process — cookies expire after weeks to months; when YouTube submissions start failing again, re-export and re-upload
 
 ### AI DJ interludes
 - [ ] Periodically generate a short spoken interlude between tracks: recap the last few songs and who submitted them, then intro the next one
