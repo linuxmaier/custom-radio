@@ -90,7 +90,7 @@ Upload MP3, WAV, FLAC, M4A, OGG, or OPUS files up to 200MB.
 ### YouTube
 Paste any YouTube video URL. Title and artist are extracted from the video metadata.
 
-> **Note**: YouTube blocks yt-dlp requests from cloud/datacenter IP ranges (AWS, GCP, etc.). If YouTube submissions fail with a "Sign in to confirm you're not a bot" error, you need to supply cookies from a signed-in YouTube session. See TODO.md for the full setup steps. File upload works as a fallback.
+> **Note**: YouTube blocks yt-dlp requests from cloud/datacenter IP ranges (AWS, GCP, etc.). If YouTube submissions fail with a bot-check error, upload a fresh `cookies.txt` (Netscape format, from a signed-in throwaway Google account) via the admin panel → **YouTube Cookies**. Cookies expire after weeks to months.
 
 ## API Reference
 
@@ -106,6 +106,8 @@ All public endpoints are proxied through nginx at `/api/`.
 | `POST` | `/api/admin/config` | Update programming mode / block size |
 | `POST` | `/api/admin/skip` | Skip the current track |
 | `DELETE` | `/api/admin/track/{id}` | Remove a track and delete its file |
+| `GET` | `/api/admin/youtube-cookies/status` | Check whether a cookies file is present |
+| `POST` | `/api/admin/youtube-cookies` | Upload a YouTube cookies.txt file |
 
 Internal endpoints (`/internal/`) are Docker-network-only and blocked at the nginx level.
 
@@ -130,12 +132,15 @@ family-radio/
 ├── docker-compose.yml
 ├── .env.example
 ├── nginx/
-│   └── default.conf.template
+│   ├── default.conf.template   # production (HTTPS)
+│   └── local.conf.template     # local dev (HTTP only)
 ├── icecast/
 │   └── icecast.xml
 ├── liquidsoap/
 │   ├── Dockerfile
 │   └── radio.liq
+├── certbot/
+│   └── Dockerfile              # extends certbot/certbot with docker-cli
 ├── api/
 │   ├── Dockerfile
 │   ├── requirements.txt
@@ -151,12 +156,14 @@ family-radio/
 │       ├── internal.py
 │       ├── admin.py
 │       └── status.py
-└── frontend/
-    ├── index.html
-    ├── playing.html
-    ├── admin.html
-    └── static/
-        └── style.css
+├── frontend/
+│   ├── index.html
+│   ├── playing.html
+│   ├── admin.html
+│   └── static/
+│       └── style.css
+└── scripts/
+    └── backup.sh               # daily S3 backup (DB + media)
 ```
 
 ## Development Choices
@@ -174,5 +181,5 @@ The tradeoff: without a burst, playback on connect depends entirely on live audi
 - **SQLite WAL mode** with a single uvicorn worker avoids write contention without needing Redis/Postgres.
 - **Background worker**: a single daemon thread polls the `jobs` table every 5 seconds. No Celery needed at family scale.
 - **Track identity**: each MP3 has its UUID written into the ID3 `comment` tag by ffmpeg during processing. Liquidsoap reads this tag back via TagLib to call `/internal/track-started/{id}`. Title and artist are **not** read from file tags at runtime — `/internal/next-track` returns a Liquidsoap annotate URI (`annotate:title="...",artist="...":file_path`) so the DB is the source of truth for display metadata. MP3 files also have `title` and `artist` tags written as a recovery aid if the DB is ever lost.
-- **TLS renewal**: the certbot container runs `certbot renew` every 12 hours automatically.
+- **TLS renewal**: the certbot container runs `certbot renew` every 12 hours. After a successful renewal it sends SIGHUP to nginx via a `--deploy-hook` (requires docker-cli in the certbot image and the Docker socket mounted read-only).
 - **yt-dlp** requires Deno as of late 2025; the API Dockerfile installs it.

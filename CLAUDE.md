@@ -19,7 +19,10 @@ api/          Python/FastAPI backend (runs inside Docker)
 frontend/     Static HTML/JS/CSS (served by nginx)
 liquidsoap/   Liquidsoap script + Dockerfile
 icecast/      icecast.xml config
-nginx/        nginx template config + .htpasswd (gitignored)
+nginx/        nginx template configs (default.conf.template = production HTTPS,
+              local.conf.template = local HTTP only) + .htpasswd (gitignored)
+certbot/      Dockerfile extending certbot/certbot with docker-cli (for nginx reload deploy hook)
+scripts/      Host-level scripts (backup.sh — daily S3 backup)
 ```
 
 ## API Layout
@@ -27,7 +30,7 @@ nginx/        nginx template config + .htpasswd (gitignored)
 Routers in `api/routers/`:
 - `submit.py`   — POST /submit
 - `internal.py` — GET /internal/next-track (returns annotate URI with title/artist from DB), POST /internal/track-started/{id}
-- `admin.py`    — GET/POST /admin/config, POST /admin/skip, DELETE /admin/track/{id}
+- `admin.py`    — GET/POST /admin/config, POST /admin/skip, DELETE /admin/track/{id}, GET /admin/youtube-cookies/status, POST /admin/youtube-cookies
 - `status.py`   — GET /status, GET /library, GET /track/{id}
 
 All public routes go through nginx at `/api/`. Internal routes are Docker-network-only (blocked by nginx).
@@ -80,10 +83,12 @@ The web player in `frontend/playing.html` embeds an `<audio>` element pointed at
 
 The admin library list (`frontend/admin.html`) is loaded once on login and does not auto-refresh (by design — the page is not intended to be a live dashboard). The one exception: while any track has `status='pending'`, a 5-second polling interval runs via `managePoll()` and refreshes the library until all tracks settle. `managePoll()` is called after every `loadLibrary()` and self-manages the interval (starts it when pending tracks exist, clears it when they're gone).
 
+The admin page also has a **YouTube Cookies** card that shows whether a cookies file is present (via `GET /admin/youtube-cookies/status`) and provides a file upload form (`POST /admin/youtube-cookies`). Cookie status is loaded once on login alongside the library.
+
 ## Known Issues / Workarounds
 
-- **yt-dlp + Deno**: yt-dlp requires Deno as of late 2025. Deno is installed in `api/Dockerfile`.
-- **YouTube downloads blocked on AWS**: yt-dlp gets "Sign in to confirm you're not a bot" from AWS datacenter IPs. Fix: pass cookies from a signed-in YouTube session via `--cookies /app/cookies/youtube.txt`. Use a throwaway Google account. See TODO.md §6 for full implementation steps. File upload works as a fallback in the meantime.
+- **yt-dlp + Deno + remote components**: yt-dlp requires Deno (installed in `api/Dockerfile`) and the `--remote-components ejs:github` flag to solve YouTube's JS challenge. Without it, yt-dlp can authenticate but cannot unlock audio formats (returns "Only images are available for download").
+- **YouTube downloads blocked on AWS**: yt-dlp gets "Sign in to confirm you're not a bot" from AWS datacenter IPs. Fix is implemented: cookies from a throwaway Google account are uploaded via the admin panel (YouTube Cookies section) and stored at `/app/cookies/youtube.txt`. The `./cookies` directory is mounted into the api container at `/app/cookies` and is gitignored. When cookies expire (weeks to months), re-export from a browser and re-upload via the admin panel.
 - **`docker-compose.override.yml` is gitignored**: local dev only (disables certbot, uses HTTP-only nginx, exposes Icecast port 8000). Copy `docker-compose.override.yml.example` to use it locally. It is not present on the production server and will not be restored by `git pull`.
 - **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}`. The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. The `SERVER_HOSTNAME` env var must be set in docker-compose.yml for nginx.
 - **`file.filename` is a string, not a bool**: In `api/routers/submit.py`, `has_file = file is not None and file.filename` evaluates to the filename string when a file is provided. Always wrap in `bool()` before using in arithmetic (e.g. `sum()`), otherwise a `TypeError: unsupported operand type(s) for +: 'int' and 'str'` will be raised.
@@ -92,6 +97,7 @@ The admin library list (`frontend/admin.html`) is loaded once on login and does 
 
 - `.env` — never commit; `.env.example` is the template
 - `nginx/.htpasswd` — generated locally with `htpasswd -cb nginx/.htpasswd family PASSPHRASE`
+- `cookies/` — YouTube session cookies (Google account credentials); upload via admin panel, never commit
 
 ## Production Server
 
@@ -106,7 +112,7 @@ The admin library list (`frontend/admin.html`) is loaded once on login and does 
   ```
   Git operations on the server must run as the `ubuntu` user: `sudo -u ubuntu git -C /home/ubuntu/radio pull`
 - **Repo location**: `/home/ubuntu/radio`
-- **TLS cert**: Let's Encrypt via certbot, expires 2026-05-23, auto-renewed by the certbot container every 12h
+- **TLS cert**: Let's Encrypt via certbot, expires 2026-05-23, auto-renewed by the certbot container every 12h; `--deploy-hook` sends SIGHUP to nginx after renewal (requires docker-cli in certbot image + Docker socket mounted)
 
 ## Development Tips
 
