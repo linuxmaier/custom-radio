@@ -47,6 +47,8 @@ services:
       - "443:443"
     environment:
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
+    labels:
+      - "family-radio.service=nginx"
     volumes:
       # .template files are processed by envsubst at container startup
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
@@ -64,7 +66,7 @@ services:
     entrypoint: >
       sh -c "trap exit TERM; while :; do
         certbot renew --webroot -w /var/www/certbot --quiet
-          --deploy-hook 'docker exec radio-nginx-1 nginx -s reload';
+          --deploy-hook 'reload-nginx';
         sleep 12h & wait $${!}; done"
 
 volumes:
