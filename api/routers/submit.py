@@ -3,6 +3,7 @@ import uuid
 import shutil
 import logging
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
@@ -14,6 +15,7 @@ router = APIRouter()
 
 MEDIA_DIR = os.environ.get("MEDIA_DIR", "/media")
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".opus"}
+YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "youtu.be", "m.youtube.com"}
 MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB
 MAX_PENDING_PER_SUBMITTER = 5
 
@@ -107,8 +109,8 @@ async def submit_track(
 
     elif has_youtube:
         url = youtube_url.strip()
-        if "youtu" not in url:
-            raise HTTPException(400, "Does not look like a YouTube URL")
+        if urlparse(url).netloc.lower() not in YOUTUBE_HOSTS:
+            raise HTTPException(400, "Only YouTube URLs are supported (youtube.com, youtu.be)")
 
         with db() as conn:
             _create_track_and_job(

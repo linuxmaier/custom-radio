@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -27,11 +28,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Family Radio API", lifespan=lifespan)
 
+_hostname = os.environ.get("SERVER_HOSTNAME", "")
+_origins = [f"https://{_hostname}"] if _hostname else ["http://localhost", "http://localhost:8000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_origins,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "X-Admin-Token"],
 )
 
 app.include_router(submit.router)
