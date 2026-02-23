@@ -23,9 +23,15 @@ services:
       - ICECAST_SOURCE_PASSWORD=${ICECAST_SOURCE_PASSWORD}
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
 
+  bgutil-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider
+    restart: unless-stopped
+
   api:
     build: ./api
     restart: unless-stopped
+    depends_on:
+      - bgutil-provider
     volumes:
       - media:/media
       - db:/data

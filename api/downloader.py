@@ -27,6 +27,7 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
         "--write-info-json",
         "--quiet",
         "--remote-components", "ejs:github",
+        "--extractor-args", "youtubepot-bgutilhttp:base_url=http://bgutil-provider:4416",
     ]
 
     if os.path.exists(COOKIES_PATH):
