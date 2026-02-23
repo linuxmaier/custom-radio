@@ -8,7 +8,7 @@ server {
 
     auth_basic "${STATION_NAME}";
     auth_basic_user_file /etc/nginx/.htpasswd;
-    limit_req zone=auth_limit burst=20 nodelay;
+    limit_req zone=auth_limit burst=50 nodelay;
 
     root /usr/share/nginx/html;
     index index.html;
