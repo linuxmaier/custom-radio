@@ -10,6 +10,9 @@ docker-compose.override.yml
 # Local management info (instance IDs, access details — not for the repo)
 MANAGEMENT.md
 
+# Local Claude helper scripts (machine-specific, not for the repo)
+.claude_scripts/
+
 # Python
 __pycache__/
 *.pyc
