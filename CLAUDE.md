@@ -35,7 +35,7 @@ Routers in `api/routers/`:
 - `submit.py`   — POST /submit
 - `internal.py` — GET /internal/next-track (returns annotate URI with title/artist from DB), POST /internal/track-started/{id}
 - `admin.py`    — GET/POST /admin/config, POST /admin/skip, DELETE /admin/track/{id}, GET /admin/youtube-cookies/status, POST /admin/youtube-cookies
-- `status.py`   — GET /status, GET /library, GET /track/{id}
+- `status.py`   — GET /status (returns now_playing, recent, pending_count, station_name), GET /library, GET /track/{id}
 
 All public routes go through nginx at `/api/`. Internal routes are Docker-network-only (blocked by nginx).
 
@@ -96,7 +96,7 @@ The admin page also has a **YouTube Cookies** card that shows whether a cookies 
 - **yt-dlp + Deno + remote components**: yt-dlp requires Deno (installed in `api/Dockerfile`) and the `--remote-components ejs:github` flag to solve YouTube's JS challenge. Without it, yt-dlp can authenticate but cannot unlock audio formats (returns "Only images are available for download").
 - **YouTube downloads blocked on AWS**: yt-dlp gets "Sign in to confirm you're not a bot" from AWS datacenter IPs. Primary fix: the `bgutil-provider` sidecar container generates YouTube Proof of Origin (`po_token`) tokens, which satisfy YouTube's bot check. Secondary fix: cookies from a throwaway Google account can be uploaded via the admin panel (YouTube Cookies section) and stored at `/app/cookies/youtube.txt`; the `./cookies` directory is mounted into the api container at `/app/cookies` and is gitignored. With bgutil-provider running, cookies should be long-lived; without it they were invalidated within minutes from AWS IPs.
 - **`docker-compose.override.yml` is gitignored**: local dev only (disables certbot, uses HTTP-only nginx, exposes Icecast port 8000). Copy `docker-compose.override.yml.example` to use it locally. It is not present on the production server and will not be restored by `git pull`.
-- **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}`. The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. The `SERVER_HOSTNAME` env var must be set in docker-compose.yml for nginx.
+- **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}` and `${STATION_NAME}` (for `auth_basic`). The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. Both vars must be set in docker-compose.yml for nginx.
 - **`file.filename` is a string, not a bool**: In `api/routers/submit.py`, `has_file = file is not None and file.filename` evaluates to the filename string when a file is provided. Always wrap in `bool()` before using in arithmetic (e.g. `sum()`), otherwise a `TypeError: unsupported operand type(s) for +: 'int' and 'str'` will be raised.
 
 ## Secrets and Gitignored Files

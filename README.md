@@ -100,7 +100,7 @@ All public endpoints are proxied through nginx at `/api/`.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/submit` | Submit a track (multipart form) |
-| `GET` | `/api/status` | Now playing + recent 10 tracks + pending count |
+| `GET` | `/api/status` | Now playing + recent 10 tracks + pending count + `station_name` |
 | `GET` | `/api/library` | All tracks with status |
 | `GET` | `/api/track/{id}` | Single track (for polling submission status) |
 | `GET` | `/api/admin/config` | Get current config (admin token required) |
@@ -119,6 +119,8 @@ See `.env.example` for the full list:
 | Variable | Description |
 |----------|-------------|
 | `SERVER_HOSTNAME` | Your domain (e.g. `radio.yourfamily.com`) |
+| `STATION_NAME` | Display name shown in nav, browser tab, and ICY stream metadata (e.g. `Smith Family Radio`) |
+| `STATION_DESCRIPTION` | ICY stream description shown in VLC and other clients |
 | `ICECAST_SOURCE_PASSWORD` | Liquidsoap → Icecast password |
 | `ICECAST_ADMIN_PASSWORD` | Icecast web admin password |
 | `ICECAST_RELAY_PASSWORD` | Icecast relay password |
