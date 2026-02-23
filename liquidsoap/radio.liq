@@ -12,6 +12,8 @@ icecast_port = 8000
 icecast_password = environment.get("ICECAST_SOURCE_PASSWORD")
 api_base = "http://api:8000"
 server_hostname = environment.get("SERVER_HOSTNAME")
+station_name = environment.get("STATION_NAME")
+station_description = environment.get("STATION_DESCRIPTION")
 
 def get_next_track() =
   log("Requesting next track from API...")
@@ -67,8 +69,8 @@ output.icecast(
   port=icecast_port,
   password=icecast_password,
   mount="/radio",
-  name="Family Radio",
-  description="Our family radio station",
+  name=station_name,
+  description=station_description,
   genre="Various",
   url="http://#{server_hostname}",
   public=false,

@@ -18,15 +18,16 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting up Family Radio API")
+    _station_name = os.getenv("STATION_NAME", "Family Radio")
+    logger.info("Starting up %s API", _station_name)
     init_db()
     start_worker()
     yield
-    logger.info("Shutting down Family Radio API")
+    logger.info("Shutting down %s API", _station_name)
     stop_worker()
 
 
-app = FastAPI(title="Family Radio API", lifespan=lifespan)
+app = FastAPI(title=os.getenv("STATION_NAME", "Family Radio") + " API", lifespan=lifespan)
 
 _hostname = os.environ.get("SERVER_HOSTNAME", "")
 _origins = [f"https://{_hostname}"] if _hostname else ["http://localhost", "http://localhost:8000"]

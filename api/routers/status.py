@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import APIRouter, HTTPException
 
@@ -84,6 +85,7 @@ def get_status():
         "now_playing": now_playing,
         "recent": recent,
         "pending_count": pending_count,
+        "station_name": os.getenv("STATION_NAME", "Family Radio"),
     }
 
 

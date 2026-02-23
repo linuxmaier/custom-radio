@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <icecast>
-    <location>Family Radio</location>
+    <location>${STATION_NAME}</location>
     <admin>admin@localhost</admin>
 
     <limits>

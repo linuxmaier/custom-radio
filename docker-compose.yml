@@ -9,6 +9,7 @@ services:
       - ICECAST_ADMIN_PASSWORD=${ICECAST_ADMIN_PASSWORD}
       - ICECAST_RELAY_PASSWORD=${ICECAST_RELAY_PASSWORD}
       - ICECAST_HOSTNAME=${SERVER_HOSTNAME}
+      - STATION_NAME=${STATION_NAME}
 
   liquidsoap:
     build: ./liquidsoap
@@ -22,6 +23,8 @@ services:
     environment:
       - ICECAST_SOURCE_PASSWORD=${ICECAST_SOURCE_PASSWORD}
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
+      - STATION_NAME=${STATION_NAME}
+      - STATION_DESCRIPTION=${STATION_DESCRIPTION}
 
   bgutil-provider:
     image: brainicism/bgutil-ytdlp-pot-provider
@@ -40,6 +43,7 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN}
       - DB_PATH=/data/radio.db
       - MEDIA_DIR=/media
+      - STATION_NAME=${STATION_NAME}
     expose:
       - "8000"
 
@@ -53,6 +57,7 @@ services:
       - "443:443"
     environment:
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
+      - STATION_NAME=${STATION_NAME}
     labels:
       - "family-radio.service=nginx"
     volumes:
