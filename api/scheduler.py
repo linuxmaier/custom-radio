@@ -1,10 +1,61 @@
 import logging
+from datetime import datetime, timedelta, timezone
+
 import numpy as np
 
 from database import db, get_config, set_config
 from audio import normalize_features, euclidean_distance, AudioFeatures
 
 logger = logging.getLogger(__name__)
+
+COOLDOWN_THRESHOLD_S = 3600  # activate when total library runtime exceeds 60 min
+COOLDOWN_WINDOW_S    = 3600  # don't replay a track within 60 min
+
+
+def _total_ready_runtime_s() -> float:
+    with db() as conn:
+        return conn.execute(
+            "SELECT COALESCE(SUM(duration_s), 0) FROM tracks WHERE status='ready' AND duration_s IS NOT NULL"
+        ).fetchone()[0]
+
+
+def _cooldown_is_active() -> bool:
+    return _total_ready_runtime_s() >= COOLDOWN_THRESHOLD_S
+
+
+def _pick_global_fallback() -> dict | None:
+    """Pick the globally least-recently-played ready track, ignoring cooldown."""
+    last_returned_id = get_config("last_returned_track_id") or ""
+    with db() as conn:
+        last_played = conn.execute(
+            "SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1"
+        ).fetchone()
+        last_played_id = last_played["track_id"] if last_played else ""
+
+        row = conn.execute("""
+            SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
+            WHERE t.status='ready' AND t.id != ? AND t.id != ?
+            ORDER BY COALESCE(
+                (SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id), ''
+            ) ASC, t.submitted_at ASC
+            LIMIT 1
+        """, (last_played_id, last_returned_id)).fetchone()
+
+        if not row:  # truly last resort — allow any ready track
+            row = conn.execute("""
+                SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
+                WHERE t.status='ready'
+                ORDER BY COALESCE(
+                    (SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id), ''
+                ) ASC, t.submitted_at ASC
+                LIMIT 1
+            """).fetchone()
+
+    if not row:
+        return None
+    set_config("last_returned_track_id", row["id"])
+    logger.info("Global cooldown fallback: returning least-recently-played track")
+    return {"id": row["id"], "title": row["title"], "artist": row["artist"], "file_path": row["file_path"]}
 
 
 def get_next_track() -> dict | None:
@@ -21,7 +72,7 @@ def get_next_track() -> dict | None:
         return _pick_rotation_track()
 
 
-def _pick_rotation_track() -> str:
+def _pick_rotation_track(depth: int = 0) -> dict | None:
     """Round-robin through submitters, N tracks per block."""
     with db() as conn:
         rows = conn.execute(
@@ -32,10 +83,14 @@ def _pick_rotation_track() -> str:
     if not submitters:
         return None
 
+    if depth >= len(submitters):
+        logger.info("All submitters on cooldown; using global fallback")
+        return _pick_global_fallback()
+
     idx = int(get_config("rotation_current_submitter_idx")) % len(submitters)
     tracks_per_block = int(get_config("rotation_tracks_per_block"))
     block_start_log_id = int(get_config("rotation_block_start_log_id") or "0")
-    last_returned_id = get_config("last_returned_track_id")
+    last_returned_id = get_config("last_returned_track_id") or ""
     current_submitter = submitters[idx]
 
     # Count songs from this submitter that have actually played since the block started.
@@ -70,40 +125,26 @@ def _pick_rotation_track() -> str:
     if played_this_block >= tracks_per_block:
         logger.info(f"Rotation: block complete for {current_submitter}, advancing")
         _advance()
-        return _pick_rotation_track()
+        return _pick_rotation_track(0)
 
     # Pick the least-played ready track for this submitter, avoiding immediate repeats.
-    # Exclude both the play_log last-played entry and last_returned_track_id.
+    # When cooldown is active, also exclude tracks played within the cooldown window.
+    cooldown_active = _cooldown_is_active()
     with db() as conn:
         last_played = conn.execute(
             "SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1"
         ).fetchone()
         last_played_id = last_played["track_id"] if last_played else ""
 
-        row = conn.execute(
-            """
-            SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
-            WHERE t.submitter=? AND t.status='ready'
-              AND t.id != ?
-              AND t.id != ?
-            ORDER BY (
-                SELECT COUNT(*) FROM play_log pl WHERE pl.track_id=t.id
-            ) ASC,
-            (
-                SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id
-            ) ASC NULLS FIRST,
-            t.submitted_at ASC
-            LIMIT 1
-            """,
-            (current_submitter, last_played_id, last_returned_id),
-        ).fetchone()
-
-        if not row and len(submitters) == 1:
-            # Only one submitter — must allow the repeat
+        if cooldown_active:
+            cutoff = (datetime.now(timezone.utc) - timedelta(seconds=COOLDOWN_WINDOW_S)).isoformat()
             row = conn.execute(
                 """
                 SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
                 WHERE t.submitter=? AND t.status='ready'
+                  AND t.id != ?
+                  AND t.id != ?
+                  AND t.id NOT IN (SELECT track_id FROM play_log WHERE played_at > ?)
                 ORDER BY (
                     SELECT COUNT(*) FROM play_log pl WHERE pl.track_id=t.id
                 ) ASC,
@@ -113,13 +154,31 @@ def _pick_rotation_track() -> str:
                 t.submitted_at ASC
                 LIMIT 1
                 """,
-                (current_submitter,),
+                (current_submitter, last_played_id, last_returned_id, cutoff),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
+                WHERE t.submitter=? AND t.status='ready'
+                  AND t.id != ?
+                  AND t.id != ?
+                ORDER BY (
+                    SELECT COUNT(*) FROM play_log pl WHERE pl.track_id=t.id
+                ) ASC,
+                (
+                    SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id
+                ) ASC NULLS FIRST,
+                t.submitted_at ASC
+                LIMIT 1
+                """,
+                (current_submitter, last_played_id, last_returned_id),
             ).fetchone()
 
     if not row:
-        # No available non-repeat track — advance to next submitter
+        logger.info(f"Rotation: no eligible track for {current_submitter} (depth={depth}), advancing")
         _advance()
-        return _pick_rotation_track()
+        return _pick_rotation_track(depth + 1)
 
     set_config("last_returned_track_id", row["id"])
     logger.info(f"Rotation: submitter={current_submitter} played_this_block={played_this_block}/{tracks_per_block}")
