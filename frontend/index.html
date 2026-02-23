@@ -40,7 +40,14 @@
       <form @submit.prevent="submitSong">
         <div class="form-group">
           <label for="submitter">Your name</label>
-          <input id="submitter" type="text" x-model="submitter" placeholder="e.g. Mom, Dad, Grandpa…" required />
+          <input id="submitter" type="text" x-model="submitter"
+                 list="submitter-names"
+                 placeholder="e.g. Mom, Dad, Grandpa…" required />
+          <datalist id="submitter-names">
+            <template x-for="name in submitterNames" :key="name">
+              <option :value="name"></option>
+            </template>
+          </datalist>
         </div>
 
         <!-- File upload -->
@@ -97,6 +104,7 @@
       return {
         tab: 'file',
         submitter: '',
+        submitterNames: [],
         title: '',
         artist: '',
         file: null,
@@ -109,6 +117,13 @@
         errorMsg: '',
         pollStatus: 'pending',
         pollInterval: null,
+
+        init() {
+          fetch('/api/submitters')
+            .then(r => r.json())
+            .then(data => { this.submitterNames = data.submitters; })
+            .catch(() => {});
+        },
 
         fileSelected(event) {
           this.file = event.target.files[0];

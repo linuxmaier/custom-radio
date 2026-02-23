@@ -97,6 +97,15 @@ def get_library():
     return {"tracks": [_track_row_to_dict(r) for r in rows]}
 
 
+@router.get("/submitters")
+def list_submitters():
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT submitter FROM tracks ORDER BY submitter"
+        ).fetchall()
+    return {"submitters": [r["submitter"] for r in rows]}
+
+
 @router.get("/track/{track_id}")
 def get_track(track_id: str):
     """Single track details (for polling submission status)."""
