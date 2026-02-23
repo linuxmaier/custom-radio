@@ -51,6 +51,8 @@ Config keys: `programming_mode`, `rotation_tracks_per_block`, `rotation_current_
 
 Rotation block tracking uses `rotation_block_start_log_id` (a `play_log.id` watermark) rather than a counter. Block completion is determined by counting `play_log` entries from the current submitter since that watermark, plus 1 if `last_returned_track_id` belongs to the current submitter (handles the prefetch/track-started race condition). `last_returned_track_id` is cleared before each skip so the flushed prefetch track does not incorrectly count as an exclusion in the subsequent selection.
 
+**Per-track cooldown** (`scheduler.py`): once the total `duration_s` of ready tracks exceeds `COOLDOWN_THRESHOLD_S` (3600 s), the rotation query adds `AND t.id NOT IN (SELECT track_id FROM play_log WHERE played_at > ?)` with a cutoff 60 minutes ago (`COOLDOWN_WINDOW_S`). `_pick_rotation_track` accepts a `depth` counter: if a submitter has no eligible tracks, their turn is skipped and the function recurses with `depth + 1`. When `depth >= len(submitters)`, `_pick_global_fallback()` is called, which picks the globally least-recently-played ready track (ignoring cooldown) to prevent silence.
+
 ## Audio Features
 
 Extracted by `api/audio.py` using librosa:
