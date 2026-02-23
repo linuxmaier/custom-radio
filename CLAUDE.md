@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Self-hosted internet radio station. Four Docker services: Icecast (stream), Liquidsoap (programmer), FastAPI API (logic), Nginx (proxy). See README.md for full architecture.
+Self-hosted internet radio station. Five Docker services: Icecast (stream), Liquidsoap (programmer), FastAPI API (logic), Nginx (proxy), bgutil-provider (YouTube po_token server). See README.md for full architecture.
 
 ## Key Design Decisions
 
@@ -26,6 +26,8 @@ certbot/      Dockerfile extending certbot/certbot with docker-cli + reload-ngin
               label and sends nginx -s reload; called by the certbot --deploy-hook after renewal)
 scripts/      Host-level scripts (backup.sh — daily S3 backup)
 ```
+
+The `bgutil-provider` service uses the upstream `brainicism/bgutil-ytdlp-pot-provider` image (no local directory). It runs a Node.js HTTP server on port 4416 (internal Docker network only) that generates YouTube Proof of Origin (`po_token`) tokens. The `bgutil-ytdlp-pot-provider` pip package (installed in the api image) is the yt-dlp plugin that calls it automatically on each YouTube download.
 
 ## API Layout
 
@@ -90,7 +92,7 @@ The admin page also has a **YouTube Cookies** card that shows whether a cookies 
 ## Known Issues / Workarounds
 
 - **yt-dlp + Deno + remote components**: yt-dlp requires Deno (installed in `api/Dockerfile`) and the `--remote-components ejs:github` flag to solve YouTube's JS challenge. Without it, yt-dlp can authenticate but cannot unlock audio formats (returns "Only images are available for download").
-- **YouTube downloads blocked on AWS**: yt-dlp gets "Sign in to confirm you're not a bot" from AWS datacenter IPs. Fix is implemented: cookies from a throwaway Google account are uploaded via the admin panel (YouTube Cookies section) and stored at `/app/cookies/youtube.txt`. The `./cookies` directory is mounted into the api container at `/app/cookies` and is gitignored. When cookies expire (weeks to months), re-export from a browser and re-upload via the admin panel.
+- **YouTube downloads blocked on AWS**: yt-dlp gets "Sign in to confirm you're not a bot" from AWS datacenter IPs. Primary fix: the `bgutil-provider` sidecar container generates YouTube Proof of Origin (`po_token`) tokens, which satisfy YouTube's bot check. Secondary fix: cookies from a throwaway Google account can be uploaded via the admin panel (YouTube Cookies section) and stored at `/app/cookies/youtube.txt`; the `./cookies` directory is mounted into the api container at `/app/cookies` and is gitignored. With bgutil-provider running, cookies should be long-lived; without it they were invalidated within minutes from AWS IPs.
 - **`docker-compose.override.yml` is gitignored**: local dev only (disables certbot, uses HTTP-only nginx, exposes Icecast port 8000). Copy `docker-compose.override.yml.example` to use it locally. It is not present on the production server and will not be restored by `git pull`.
 - **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}`. The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. The `SERVER_HOSTNAME` env var must be set in docker-compose.yml for nginx.
 - **`file.filename` is a string, not a bool**: In `api/routers/submit.py`, `has_file = file is not None and file.filename` evaluates to the filename string when a file is provided. Always wrap in `bool()` before using in arithmetic (e.g. `sum()`), otherwise a `TypeError: unsupported operand type(s) for +: 'int' and 'str'` will be raised.
@@ -122,6 +124,6 @@ The admin page also has a **YouTube Cookies** card that shows whether a cookies 
 - **nginx config templates**: two templates exist — `nginx/default.conf.template` (production, HTTPS + certbot) and `nginx/local.conf.template` (local, HTTP only). The override file maps the local one into the nginx container.
 - To test the API locally without Docker: `cd api && uvicorn main:app --reload`
   Set env vars: `ADMIN_TOKEN=dev DB_PATH=./radio.db MEDIA_DIR=./media`
-- To rebuild after Python changes: `docker compose up -d --build api`
+- To rebuild after Python changes: `docker compose up -d --build api && docker compose restart nginx` — nginx caches the api container's IP at startup, so it must be restarted whenever the api container is recreated (otherwise nginx serves 502s until restarted)
 - To tail API logs: `docker compose logs -f api`
 - Liquidsoap reconnects to Icecast automatically on failure; no manual intervention needed.

@@ -4,12 +4,13 @@ A self-hosted internet radio station for families to share music. Members submit
 
 ## Architecture
 
-Four Docker services:
+Five Docker services:
 
 - **Icecast** — stream server; reachable only within the Docker network (port 8000 is not exposed externally)
 - **Liquidsoap** — programs the stream; asks the API for the next track and handles ICY metadata
 - **Python/FastAPI** — manages submissions, downloads, audio analysis, library, and scheduling
 - **Nginx** — reverse proxy for the web UI and audio stream; handles HTTPS and HTTP Basic Auth; proxies the stream at `/stream`
+- **bgutil-provider** — local Node.js server that generates YouTube Proof of Origin (`po_token`) tokens; used by yt-dlp to pass YouTube's bot check from cloud IPs
 
 ## Quick Start
 
@@ -90,7 +91,7 @@ Upload MP3, WAV, FLAC, M4A, OGG, or OPUS files up to 200MB.
 ### YouTube
 Paste any YouTube video URL. Title and artist are extracted from the video metadata.
 
-> **Note**: YouTube blocks yt-dlp requests from cloud/datacenter IP ranges (AWS, GCP, etc.). If YouTube submissions fail with a bot-check error, upload a fresh `cookies.txt` (Netscape format, from a signed-in throwaway Google account) via the admin panel → **YouTube Cookies**. Cookies expire after weeks to months.
+> **Note**: YouTube blocks yt-dlp requests from cloud/datacenter IP ranges (AWS, GCP, etc.). The `bgutil-provider` sidecar handles this by generating Proof of Origin tokens locally, so YouTube downloads should work out of the box. If submissions still fail with a bot-check error, upload a fresh `cookies.txt` (Netscape format, from a signed-in throwaway Google account) via the admin panel → **YouTube Cookies** as a secondary measure.
 
 ## API Reference
 
@@ -249,4 +250,4 @@ The tradeoff: without a burst, playback on connect depends entirely on live audi
 - **Track identity**: each MP3 has its UUID written into the ID3 `comment` tag by ffmpeg during processing. Liquidsoap reads this tag back via TagLib to call `/internal/track-started/{id}`. Title and artist are **not** read from file tags at runtime — `/internal/next-track` returns a Liquidsoap annotate URI (`annotate:title="...",artist="...":file_path`) so the DB is the source of truth for display metadata. MP3 files also have `title` and `artist` tags written as a recovery aid if the DB is ever lost.
 - **TLS renewal**: the certbot container runs `certbot renew` every 12 hours. After a successful renewal it sends SIGHUP to nginx via a `--deploy-hook` (requires docker-cli in the certbot image and the Docker socket mounted read-only). The deploy hook finds the nginx container by a `family-radio.service=nginx` Docker label rather than a hardcoded container name, so it works regardless of the directory the project is cloned into.
 - **Bringing your own TLS cert or terminating TLS upstream**: if you use Cloudflare Tunnel, Tailscale Funnel, a wildcard cert, or another CA, you don't need the certbot service. Disable it (or replace its entrypoint with `sleep infinity`) and swap `nginx/default.conf.template` for `nginx/local.conf.template` in the nginx volumes, updating the template to match your cert paths or removing the TLS block entirely if TLS is handled upstream.
-- **yt-dlp** requires Deno as of late 2025; the API Dockerfile installs it.
+- **yt-dlp** requires Deno as of late 2025 (installed in the API Dockerfile) and the `bgutil-ytdlp-pot-provider` plugin (installed via pip) to pass YouTube's Proof of Origin bot check from cloud IPs. The plugin calls the `bgutil-provider` sidecar container at `http://bgutil-provider:4416` to obtain a `po_token` for each download.
