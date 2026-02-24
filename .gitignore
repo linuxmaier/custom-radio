@@ -10,6 +10,7 @@ docker-compose.override.yml
 # Local management info (instance IDs, access details — not for the repo)
 MANAGEMENT.md
 AUDIT_PROMPT.md
+future_inf_considerations.txt
 
 # Local Claude helper scripts (machine-specific, not for the repo)
 .claude_scripts/
