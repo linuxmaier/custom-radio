@@ -8,6 +8,7 @@ from database import db, get_connection
 from downloader import download_youtube, convert_to_standard_mp3
 from audio import extract_features
 from scheduler import update_feature_bounds
+from alerts import send_alert
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,8 @@ def _process_job(job_id: int, track_id: str):
             raise RuntimeError(f"Track {track_id} not found")
 
         source_type = row["source_type"]
-        source_url = row["source_url"]
+        source_url = row["source_url"] or ""
+        submitter = row["submitter"] or ""
         raw_path = None
         title = None
         artist = None
@@ -137,6 +139,20 @@ def _process_job(job_id: int, track_id: str):
             conn.execute(
                 "UPDATE tracks SET status='failed', error_msg=? WHERE id=?",
                 (error_msg, track_id),
+            )
+        if "bot-check failed" in error_msg:
+            hostname = os.environ.get("SERVER_HOSTNAME", "")
+            admin_url = f"https://{hostname}/admin" if hostname else "(admin panel)"
+            send_alert(
+                subject="[Family Radio] YouTube bot-check failed",
+                body=(
+                    f"A YouTube download failed because YouTube is requiring sign-in verification.\n\n"
+                    f"Submitted by: {submitter}\n"
+                    f"URL: {source_url}\n\n"
+                    f"Fix: upload fresh cookies at the admin panel:\n"
+                    f"{admin_url}\n\n"
+                    f"Error: {error_msg}"
+                ),
             )
 
 
