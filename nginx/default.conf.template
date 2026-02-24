@@ -32,6 +32,12 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    location = /ping {
+        auth_basic off;
+        return 200 "ok";
+        add_header Content-Type text/plain;
+    }
+
     # Block internal API routes from external access
     location /api/internal/ {
         deny all;

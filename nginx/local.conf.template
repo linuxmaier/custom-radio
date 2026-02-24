@@ -13,6 +13,12 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    location = /ping {
+        auth_basic off;
+        return 200 "ok";
+        add_header Content-Type text/plain;
+    }
+
     location /api/internal/ {
         deny all;
     }
