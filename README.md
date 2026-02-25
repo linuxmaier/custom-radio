@@ -129,6 +129,12 @@ See `.env.example` for the full list:
 | `SITE_PASSPHRASE` | HTTP Basic Auth password |
 | `BACKUP_DEST` | Backup destination (e.g. `s3://your-bucket`); leave unset to disable backups |
 | `BACKUP_ENDPOINT_URL` | S3-compatible endpoint URL (optional; for non-AWS providers) |
+| `SMTP_HOST` | SMTP server hostname for alert emails (e.g. `email-smtp.us-east-1.amazonaws.com`); leave unset to disable alerts |
+| `SMTP_PORT` | SMTP port (default: `587`) |
+| `SMTP_USER` | SMTP username |
+| `SMTP_PASS` | SMTP password |
+| `ALERT_FROM` | From address for alert emails |
+| `ALERT_TO` | Recipient address for alert emails |
 
 ## Backups
 
@@ -193,6 +199,35 @@ aws s3 sync s3://your-bucket/media/tracks/ \
 aws s3 cp s3://your-bucket/media/tracks/TRACK_ID.mp3 \
   /var/lib/docker/volumes/radio_media/_data/tracks/TRACK_ID.mp3
 ```
+
+## Email Alerts
+
+The API can send alert emails when a YouTube download fails with a bot-check error — so you know to upload fresh cookies without having to check the admin panel manually.
+
+Alerts are opt-in. Nothing is sent unless `SMTP_HOST` is set in `.env`. Any SMTP server works; AWS SES is recommended for VPS deployments.
+
+### Configuration
+
+Add to `.env`:
+
+```bash
+SMTP_HOST=email-smtp.us-east-1.amazonaws.com
+SMTP_PORT=587
+SMTP_USER=your-ses-smtp-username
+SMTP_PASS=your-ses-smtp-password
+ALERT_FROM=alerts@your.domain.com
+ALERT_TO=you@example.com
+```
+
+For AWS SES, `ALERT_FROM` must use a domain or address verified in your SES account. Generate SMTP credentials in the SES console under **Account dashboard → SMTP settings → Create SMTP credentials**.
+
+### What triggers an alert
+
+| Event | Subject |
+|-------|---------|
+| YouTube bot-check failure | `[Family Radio] YouTube bot-check failed` |
+
+The alert email includes the submitter name, the YouTube URL that failed, and a direct link to the admin panel to upload fresh cookies.
 
 ## Project Structure
 
