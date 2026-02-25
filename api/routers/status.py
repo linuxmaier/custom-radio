@@ -22,6 +22,7 @@ def _track_row_to_dict(row) -> dict:
         "error_msg": row["error_msg"],
         "submitted_at": row["submitted_at"],
         "ready_at": row["ready_at"],
+        "comment": row["comment"],
     }
 
 
@@ -33,7 +34,7 @@ def get_status():
         now_playing_row = conn.execute(
             """
             SELECT t.id, t.title, t.artist, t.submitter, t.duration_s,
-                   pl.played_at
+                   t.comment, pl.played_at
             FROM play_log pl
             JOIN tracks t ON pl.track_id = t.id
             ORDER BY pl.played_at DESC
@@ -67,6 +68,7 @@ def get_status():
             "submitter": now_playing_row["submitter"],
             "duration_s": now_playing_row["duration_s"],
             "played_at": now_playing_row["played_at"],
+            "comment": now_playing_row["comment"],
         }
 
     recent = []

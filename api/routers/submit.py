@@ -32,14 +32,15 @@ def _create_track_and_job(
     submitter: str,
     source_type: str,
     source_url: str | None = None,
+    comment: str | None = None,
 ):
     conn.execute(
         """
         INSERT INTO tracks (id, title, artist, submitter, source_type, source_url,
-                            status, submitted_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+                            status, submitted_at, comment)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
         """,
-        (track_id, title, artist, submitter, source_type, source_url, _now()),
+        (track_id, title, artist, submitter, source_type, source_url, _now(), comment),
     )
     conn.execute(
         "INSERT INTO jobs (track_id, status, created_at) VALUES (?, 'pending', ?)",
@@ -54,11 +55,13 @@ async def submit_track(
     title: str = Form(None),
     artist: str = Form(None),
     file: UploadFile = File(None),
+    comment: str = Form(None),
 ):
     if not submitter or not submitter.strip():
         raise HTTPException(400, "submitter is required")
 
     submitter = submitter.strip()[:50]
+    comment = comment.strip()[:280] if comment and comment.strip() else None
 
     with db() as conn:
         pending = conn.execute(
@@ -101,7 +104,7 @@ async def submit_track(
         with db() as conn:
             _create_track_and_job(
                 conn, track_id, track_title, track_artist,
-                submitter, "upload",
+                submitter, "upload", comment=comment,
             )
 
         logger.info(f"Upload submission: track_id={track_id} file={dest}")
@@ -116,7 +119,7 @@ async def submit_track(
             _create_track_and_job(
                 conn, track_id,
                 title or "Pending...", artist or "Pending...",
-                submitter, "youtube", url,
+                submitter, "youtube", url, comment=comment,
             )
 
         logger.info(f"YouTube submission: track_id={track_id} url={url}")

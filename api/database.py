@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     status TEXT NOT NULL DEFAULT 'pending',
     error_msg TEXT,
     submitted_at TEXT NOT NULL,
-    ready_at TEXT
+    ready_at TEXT,
+    comment TEXT
 );
 
 CREATE TABLE IF NOT EXISTS play_log (
@@ -96,6 +97,11 @@ def init_db():
                 "INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)",
                 (key, value),
             )
+        # Migrations for existing databases
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN comment TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         conn.commit()
     finally:
         conn.close()

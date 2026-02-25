@@ -45,6 +45,8 @@
       <div style="margin-top:0.5rem; font-size:0.8rem; color: var(--muted);">
         Submitted by <strong x-text="nowPlaying?.submitter"></strong>
       </div>
+      <div x-show="nowPlaying?.comment" style="margin-top:0.4rem; font-size:0.9rem; color: var(--muted); font-style:italic;"
+           x-text="nowPlaying?.comment"></div>
     </div>
 
     <div x-show="!nowPlaying && loaded" class="now-playing" x-cloak>

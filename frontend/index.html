@@ -76,6 +76,13 @@
           </div>
         </div>
 
+        <div class="form-group">
+          <label for="commentInput">Comment (optional — shown on the Now Playing page)</label>
+          <textarea id="commentInput" x-model="comment" maxlength="280"
+                    placeholder="A note for the family…" rows="2"
+                    style="resize:vertical;"></textarea>
+        </div>
+
         <button type="submit" class="btn" :disabled="submitting">
           <span x-show="submitting" class="spinner"></span>
           <span x-text="submitting ? 'Submitting…' : 'Add to Station'"></span>
@@ -107,6 +114,7 @@
         submitterNames: [],
         title: '',
         artist: '',
+        comment: '',
         file: null,
         youtubeUrl: '',
         submitting: false,
@@ -152,6 +160,7 @@
             if (!this.youtubeUrl) { this.errorMsg = 'Please enter a YouTube URL.'; this.submitting = false; return; }
             fd.append('youtube_url', this.youtubeUrl);
           }
+          if (this.comment.trim()) fd.append('comment', this.comment.trim());
 
           try {
             const res = await fetch('/api/submit', { method: 'POST', body: fd });
