@@ -44,6 +44,7 @@ services:
       - DB_PATH=/data/radio.db
       - MEDIA_DIR=/media
       - STATION_NAME=${STATION_NAME}
+      - SERVER_HOSTNAME=${SERVER_HOSTNAME}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_USER=${SMTP_USER}
