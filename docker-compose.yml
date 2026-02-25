@@ -2,6 +2,7 @@ services:
   icecast:
     image: moul/icecast
     restart: unless-stopped
+    mem_limit: 100m
     volumes:
       - ./icecast/icecast.xml:/etc/icecast.xml:ro
     environment:
@@ -14,6 +15,7 @@ services:
   liquidsoap:
     build: ./liquidsoap
     restart: unless-stopped
+    mem_limit: 400m
     depends_on:
       - icecast
       - api
@@ -33,6 +35,8 @@ services:
   api:
     build: ./api
     restart: unless-stopped
+    mem_limit: 600m
+    cpus: '0.8'
     depends_on:
       - bgutil-provider
     volumes:
@@ -57,6 +61,7 @@ services:
   nginx:
     image: nginx:alpine
     restart: unless-stopped
+    mem_limit: 64m
     depends_on:
       - api
     ports:

@@ -73,4 +73,14 @@ log "DB uploaded to ${BUCKET}"
 aws s3 sync "${ENDPOINT_ARGS[@]}" "${MEDIA_VOLUME}/tracks/" "${BUCKET}/media/tracks/" --quiet
 log "Media synced to ${BUCKET}"
 
+# 4. Back up secrets that are gitignored and unrecoverable without originals
+aws s3 cp "${ENDPOINT_ARGS[@]}" "${REPO_ROOT}/.env" "${BUCKET}/config/env-${TIMESTAMP}.env" --quiet
+aws s3 cp "${ENDPOINT_ARGS[@]}" "${REPO_ROOT}/.env" "${BUCKET}/config/env-latest.env" --quiet
+log ".env uploaded to ${BUCKET}/config/"
+
+if [ -f "${REPO_ROOT}/nginx/.htpasswd" ]; then
+    aws s3 cp "${ENDPOINT_ARGS[@]}" "${REPO_ROOT}/nginx/.htpasswd" "${BUCKET}/config/htpasswd-latest" --quiet
+    log ".htpasswd uploaded to ${BUCKET}/config/"
+fi
+
 log "Backup complete"
