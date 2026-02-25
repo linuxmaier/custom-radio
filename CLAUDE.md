@@ -108,21 +108,6 @@ The admin page also has a **YouTube Cookies** card that shows whether a cookies 
 - `nginx/.htpasswd` — generated locally with `htpasswd -cb nginx/.htpasswd family PASSPHRASE`
 - `cookies/` — YouTube session cookies (Google account credentials); upload via admin panel, never commit
 
-## Production Server
-
-- **Domain**: `radio-maier.live` (DNS at Porkbun, A record → Elastic IP)
-- **Instance**: EC2 t3.small, us-west-2, instance ID `i-04cf8f3c771ae92c8`
-- **Access**: AWS SSM Session Manager — no SSH port. CLI access via named profile:
-  ```bash
-  aws ssm send-command --profile family-radio --region us-west-2 \
-    --instance-ids i-04cf8f3c771ae92c8 \
-    --document-name AWS-RunShellScript \
-    --parameters commands=["your command here"]
-  ```
-  Git operations on the server must run as the `ubuntu` user: `sudo -u ubuntu git -C /home/ubuntu/radio pull`
-- **Repo location**: `/home/ubuntu/radio`
-- **TLS cert**: Let's Encrypt via certbot, expires 2026-05-23, auto-renewed by the certbot container every 12h; `--deploy-hook` calls `reload-nginx` (baked into the certbot image), which finds the nginx container via the `family-radio.service=nginx` Docker label and sends `nginx -s reload`. Requires docker-cli in certbot image + Docker socket mounted read-only.
-
 ## Development Tips
 
 - **Local full-stack**: `docker compose up --build` — `docker-compose.override.yml` is automatically applied and handles local differences (HTTP-only nginx, certbot disabled, `SERVER_HOSTNAME=localhost`)
