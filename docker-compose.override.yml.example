@@ -24,6 +24,8 @@ services:
       - ./frontend:/usr/share/nginx/html:ro
     environment:
       - SERVER_HOSTNAME=localhost
+    logging:
+      driver: json-file
 
   certbot:
     entrypoint: ["sh", "-c", "echo 'certbot disabled locally' && sleep infinity"]
