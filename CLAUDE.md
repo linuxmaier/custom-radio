@@ -108,6 +108,10 @@ The admin page also has a **YouTube Cookies** card that shows whether a cookies 
 - `nginx/.htpasswd` — generated locally with `htpasswd -cb nginx/.htpasswd family PASSPHRASE`
 - `cookies/` — YouTube session cookies (Google account credentials); upload via admin panel, never commit
 
+## GitHub CLI Tips
+
+- **`gh` infers the repo from the current directory**: Run `gh issue list`, `gh pr list`, etc. directly without `--repo` when already inside the repo. Avoid command substitution like `--repo $(git remote get-url origin)` — it triggers an extra approval prompt in Claude Code UI.
+
 ## Development Tips
 
 - **Local full-stack**: `docker compose up --build` — `docker-compose.override.yml` is automatically applied and handles local differences (HTTP-only nginx, certbot disabled, `SERVER_HOSTNAME=localhost`)
