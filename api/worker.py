@@ -156,8 +156,12 @@ def _process_job(job_id: int, track_id: str):
             )
 
 
-def _reset_stuck_jobs():
-    """On startup, reset any jobs left in 'processing' state by a previous crash/restart."""
+def reset_stuck_jobs():
+    """Reset any jobs left in 'processing' state by a previous crash/restart.
+
+    Called from the main thread during startup, before the worker thread starts,
+    so it is guaranteed to run against the correct DB and see committed state.
+    """
     with db() as conn:
         stuck = conn.execute(
             "SELECT id, track_id FROM jobs WHERE status='processing'"
@@ -171,13 +175,14 @@ def _reset_stuck_jobs():
                 "UPDATE tracks SET status='pending' WHERE id=?",
                 (row["track_id"],),
             )
-        if stuck:
-            logger.warning(f"Reset {len(stuck)} stuck processing job(s) to pending on startup")
+    if stuck:
+        logger.warning(f"Reset {len(stuck)} stuck processing job(s) to pending on startup")
+    else:
+        logger.info("No stuck processing jobs found on startup")
 
 
 def _worker_loop():
     """Background worker: poll for pending jobs and process them."""
-    _reset_stuck_jobs()
     logger.info("Worker thread started")
     while not _stop_event.is_set():
         try:

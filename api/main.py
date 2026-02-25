@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
-from worker import start_worker, stop_worker
+from worker import start_worker, stop_worker, reset_stuck_jobs
 from routers import submit, internal, admin, status
 
 logging.basicConfig(
@@ -21,6 +21,7 @@ async def lifespan(app: FastAPI):
     _station_name = os.getenv("STATION_NAME", "Family Radio")
     logger.info("Starting up %s API", _station_name)
     init_db()
+    reset_stuck_jobs()
     start_worker()
     yield
     logger.info("Shutting down %s API", _station_name)
