@@ -44,6 +44,12 @@ services:
       - DB_PATH=/data/radio.db
       - MEDIA_DIR=/media
       - STATION_NAME=${STATION_NAME}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - ALERT_FROM=${ALERT_FROM}
+      - ALERT_TO=${ALERT_TO}
     expose:
       - "8000"
 
