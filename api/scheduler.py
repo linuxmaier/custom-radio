@@ -1,4 +1,6 @@
 import logging
+import math
+import random
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -127,8 +129,11 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
         _advance()
         return _pick_rotation_track(0)
 
-    # Pick the least-played ready track for this submitter, avoiding immediate repeats.
-    # When cooldown is active, also exclude tracks played within the cooldown window.
+    # Pick the next track for this submitter:
+    #   - Tracks with 0 plays are guaranteed (pick randomly among them).
+    #   - Tracks with >0 plays are chosen by weighted random: weight = 1/sqrt(play_count + 1),
+    #     so less-played tracks are more likely but well-played tracks still have a real chance.
+    # When cooldown is active, exclude tracks played within the cooldown window.
     cooldown_active = _cooldown_is_active()
     with db() as conn:
         last_played = conn.execute(
@@ -138,47 +143,51 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
 
         if cooldown_active:
             cutoff = (datetime.now(timezone.utc) - timedelta(seconds=COOLDOWN_WINDOW_S)).isoformat()
-            row = conn.execute(
+            rows = conn.execute(
                 """
-                SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
+                SELECT t.id, t.title, t.artist, t.file_path,
+                       COUNT(pl.id) as play_count
+                FROM tracks t
+                LEFT JOIN play_log pl ON pl.track_id = t.id
                 WHERE t.submitter=? AND t.status='ready'
                   AND t.id != ?
                   AND t.id != ?
                   AND t.id NOT IN (SELECT track_id FROM play_log WHERE played_at > ?)
-                ORDER BY (
-                    SELECT COUNT(*) FROM play_log pl WHERE pl.track_id=t.id
-                ) ASC,
-                (
-                    SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id
-                ) ASC NULLS FIRST,
-                t.submitted_at ASC
-                LIMIT 1
+                GROUP BY t.id
                 """,
                 (current_submitter, last_played_id, last_returned_id, cutoff),
-            ).fetchone()
+            ).fetchall()
         else:
-            row = conn.execute(
+            rows = conn.execute(
                 """
-                SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
+                SELECT t.id, t.title, t.artist, t.file_path,
+                       COUNT(pl.id) as play_count
+                FROM tracks t
+                LEFT JOIN play_log pl ON pl.track_id = t.id
                 WHERE t.submitter=? AND t.status='ready'
                   AND t.id != ?
                   AND t.id != ?
-                ORDER BY (
-                    SELECT COUNT(*) FROM play_log pl WHERE pl.track_id=t.id
-                ) ASC,
-                (
-                    SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id
-                ) ASC NULLS FIRST,
-                t.submitted_at ASC
-                LIMIT 1
+                GROUP BY t.id
                 """,
                 (current_submitter, last_played_id, last_returned_id),
-            ).fetchone()
+            ).fetchall()
 
-    if not row:
+    if not rows:
         logger.info(f"Rotation: no eligible track for {current_submitter} (depth={depth}), advancing")
         _advance()
         return _pick_rotation_track(depth + 1)
+
+    new_tracks = [r for r in rows if r["play_count"] == 0]
+    existing_tracks = [r for r in rows if r["play_count"] > 0]
+
+    if new_tracks:
+        # Guarantee: any unplayed track gets priority; pick randomly among them.
+        row = random.choice(new_tracks)
+        logger.info(f"Rotation: guaranteeing unplayed track for {current_submitter}")
+    else:
+        # Weighted random: weight = 1/sqrt(play_count + 1).
+        weights = [1.0 / math.sqrt(r["play_count"] + 1) for r in existing_tracks]
+        row = random.choices(existing_tracks, weights=weights, k=1)[0]
 
     set_config("last_returned_track_id", row["id"])
     logger.info(f"Rotation: submitter={current_submitter} played_this_block={played_this_block}/{tracks_per_block}")
