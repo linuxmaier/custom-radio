@@ -240,6 +240,47 @@ For AWS SES, `ALERT_FROM` must use a domain or address verified in your SES acco
 
 The alert email includes the submitter name, the YouTube URL that failed, and a direct link to the admin panel to upload fresh cookies.
 
+## Push Notifications
+
+Family members can opt in to browser push notifications and be notified whenever someone adds a new song. The notification fires when the track finishes processing and is ready to play.
+
+Push notifications are opt-in — nothing is sent and no UI is shown unless the VAPID keys are configured. Unlike the other secrets in `.env`, VAPID keys must be a valid cryptographic key pair; you can't just type a random string.
+
+### Generating keys
+
+Run this once per station (requires Python and the `cryptography` package, which is installed as part of `pywebpush` in the API image):
+
+```bash
+python3 -c "
+from cryptography.hazmat.primitives.asymmetric.ec import generate_private_key, SECP256R1
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+import base64
+k = generate_private_key(SECP256R1())
+priv = base64.urlsafe_b64encode(k.private_numbers().private_value.to_bytes(32,'big')).decode()
+pub = base64.urlsafe_b64encode(k.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)).decode()
+print(f'VAPID_PRIVATE_KEY={priv}')
+print(f'VAPID_PUBLIC_KEY={pub}')
+"
+```
+
+### Configuration
+
+Add the output to `.env`, plus a contact email:
+
+```bash
+VAPID_PRIVATE_KEY=<generated above>
+VAPID_PUBLIC_KEY=<generated above>
+VAPID_CLAIMS_EMAIL=admin@yourfamily.com
+```
+
+### How it works
+
+- Family members visit the **Now Playing** page and click **Turn on notifications**
+- The browser prompts for notification permission; once granted, the subscription is stored in the database
+- When a track finishes processing, a push notification is sent to all subscribers: _"[Submitter] added [Title] to the radio!"_
+- Clicking the notification opens the Now Playing page
+- Subscriptions that have expired are removed automatically on the next send
+
 ## Project Structure
 
 ```
