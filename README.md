@@ -71,7 +71,8 @@ The override does three things: uses `nginx/local.conf.template` (HTTP on port 8
 | Page | URL | Purpose |
 |------|-----|---------|
 | Submit | `/` | Add a song (file upload or YouTube link) |
-| Now Playing | `/playing.html` | See what's on and recent history |
+| Now Playing | `/playing.html` | See what's on, recent history, and manage push notifications |
+| Library | `/library.html` | All songs grouped by submitter with play counts |
 | Admin | `/admin.html` | Change mode, skip track, manage library |
 
 All pages are behind HTTP Basic Auth (shared family username/password from `.env`). The admin page additionally requires an admin token sent via the `X-Admin-Token` header.
@@ -99,10 +100,16 @@ All public endpoints are proxied through nginx at `/api/`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/submit` | Submit a track (multipart form); optional `comment` field (max 280 chars) shown on the Now Playing page |
+| `POST` | `/api/submit` | Submit a track (multipart form); optional `comment` field (max 80 chars) shown on the Now Playing page and in push notifications |
 | `GET` | `/api/status` | Now playing + recent 10 tracks + pending count + `station_name` |
-| `GET` | `/api/library` | All tracks with status |
+| `GET` | `/api/public-library` | Ready tracks with play counts, grouped by submitter |
+| `GET` | `/api/library` | All tracks with status (admin use) |
 | `GET` | `/api/track/{id}` | Single track (for polling submission status) |
+| `GET` | `/api/check-duplicate` | Fuzzy duplicate check by `title`, `artist`, and/or `video_id` |
+| `GET` | `/api/manifest.json` | PWA Web App Manifest (station name from `STATION_NAME` env var) |
+| `GET` | `/api/push/vapid-key` | VAPID public key for push subscription |
+| `POST` | `/api/push/subscribe` | Register a push subscription |
+| `POST` | `/api/push/unsubscribe` | Remove a push subscription |
 | `GET` | `/api/admin/config` | Get current config (admin token required) |
 | `POST` | `/api/admin/config` | Update programming mode / block size |
 | `POST` | `/api/admin/skip` | Skip the current track |
@@ -135,6 +142,9 @@ See `.env.example` for the full list:
 | `SMTP_PASS` | SMTP password |
 | `ALERT_FROM` | From address for alert emails |
 | `ALERT_TO` | Recipient address for alert emails |
+| `VAPID_PRIVATE_KEY` | VAPID private key (base64url) for Web Push notifications; leave unset to disable push |
+| `VAPID_PUBLIC_KEY` | VAPID public key (base64url) served to browsers for push subscription |
+| `VAPID_CLAIMS_EMAIL` | Contact email included in VAPID JWT claims (e.g. `admin@yourfamily.com`) |
 
 ## Backups
 
@@ -256,17 +266,25 @@ family-radio/
 │   ├── scheduler.py
 │   ├── audio.py
 │   ├── downloader.py
+│   ├── push.py             # Web Push: send_push_to_all(); no-op if VAPID unset
 │   └── routers/
 │       ├── submit.py
 │       ├── internal.py
 │       ├── admin.py
-│       └── status.py
+│       ├── status.py
+│       └── push.py         # /manifest.json, /push/vapid-key, /push/subscribe, /push/unsubscribe
 ├── frontend/
 │   ├── index.html
-│   ├── playing.html
+│   ├── playing.html        # includes push notification subscribe/unsubscribe UI
+│   ├── library.html        # tracks grouped by submitter with play counts
 │   ├── admin.html
+│   ├── sw.js               # service worker: push events, notificationclick
 │   └── static/
-│       └── style.css
+│       ├── style.css
+│       ├── push.js         # browser-side push helpers (window.pushHelpers)
+│       ├── icon-192.png    # PWA home screen icon (placeholder — see issue #44)
+│       ├── icon-512.png    # PWA splash/maskable icon (placeholder)
+│       └── badge-96.png    # notification badge icon (placeholder)
 └── scripts/
     └── backup.sh               # daily backup script (DB + media; see Backups section)
 ```

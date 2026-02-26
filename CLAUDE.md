@@ -32,10 +32,11 @@ The `bgutil-provider` service uses the upstream `brainicism/bgutil-ytdlp-pot-pro
 ## API Layout
 
 Routers in `api/routers/`:
-- `submit.py`   — POST /submit
+- `submit.py`   — POST /submit, GET /check-duplicate, GET /submitters
 - `internal.py` — GET /internal/next-track (returns annotate URI with title/artist from DB), POST /internal/track-started/{id}
 - `admin.py`    — GET/POST /admin/config, POST /admin/skip, DELETE /admin/track/{id}, GET /admin/youtube-cookies/status, POST /admin/youtube-cookies
-- `status.py`   — GET /status (returns now_playing, recent, pending_count, station_name), GET /library, GET /track/{id}
+- `status.py`   — GET /status (returns now_playing, recent, pending_count, station_name), GET /library, GET /public-library, GET /track/{id}
+- `push.py`     — GET /manifest.json (dynamic PWA manifest), GET /push/vapid-key, POST /push/subscribe, POST /push/unsubscribe
 
 All public routes go through nginx at `/api/`. Internal routes are Docker-network-only (blocked by nginx).
 
@@ -45,7 +46,7 @@ Admin endpoints are authenticated via the `X-Admin-Token` request header (value 
 
 ## Database
 
-SQLite at `/data/radio.db` (Docker volume). Schema initialised in `database.py:init_db()`. Tables: `tracks`, `play_log`, `jobs`, `config`.
+SQLite at `/data/radio.db` (Docker volume). Schema initialised in `database.py:init_db()`. Tables: `tracks`, `play_log`, `jobs`, `config`, `push_subscriptions`.
 
 Config keys: `programming_mode`, `rotation_tracks_per_block`, `rotation_current_submitter_idx`, `rotation_block_start_log_id`, `last_returned_track_id`, `feature_min/max_*` (4 audio features).
 
