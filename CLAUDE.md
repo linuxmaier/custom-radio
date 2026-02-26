@@ -140,6 +140,6 @@ PR descriptions must include:
 - **nginx config templates**: two templates exist — `nginx/default.conf.template` (production, HTTPS + certbot) and `nginx/local.conf.template` (local, HTTP only). The override file maps the local one into the nginx container.
 - To test the API locally without Docker: `cd api && uvicorn main:app --reload`
   Set env vars: `ADMIN_TOKEN=dev DB_PATH=./radio.db MEDIA_DIR=./media`
-- To rebuild after Python changes: `docker compose up -d --build api && docker compose restart nginx` — nginx caches the api container's IP at startup, so it must be restarted whenever the api container is recreated (otherwise nginx serves 502s until restarted)
+- **After any Python file change, always use `--build`**: `docker compose up -d --build api && docker compose restart nginx`. Without `--build`, Docker restarts the container using the old image — the code change is silently ignored and the old behaviour persists. nginx must also be restarted because it caches the api container's IP at startup (otherwise it serves 502s).
 - To tail API logs: `docker compose logs -f api`
 - Liquidsoap reconnects to Icecast automatically on failure; no manual intervention needed.
