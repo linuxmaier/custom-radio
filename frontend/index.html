@@ -26,6 +26,19 @@
       ⚠️ <span x-text="warning"></span>
     </div>
 
+    <div x-show="duplicates.length && !submitAnyway" class="alert warning" x-cloak>
+      ⚠️ This song may already be in the library:
+      <ul style="margin: 0.5rem 0 0.75rem; padding-left: 1.25rem;">
+        <template x-for="d in duplicates" :key="d.id">
+          <li x-text="`${d.title} by ${d.artist} (added by ${d.submitter})`"></li>
+        </template>
+      </ul>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <button type="button" class="btn btn-sm" @click="submitAnyway = true; submitSong()">Submit anyway</button>
+        <button type="button" class="btn btn-sm btn-secondary" @click="duplicates = []; submitAnyway = false">Cancel</button>
+      </div>
+    </div>
+
     <div x-show="errorMsg" class="alert error" x-cloak>
       <span x-text="errorMsg"></span>
     </div>
@@ -59,7 +72,9 @@
           </div>
           <div class="form-group">
             <label for="titleInput">Title (optional — auto-detected from file name)</label>
-            <input id="titleInput" type="text" x-model="title" placeholder="Song title" />
+            <input id="titleInput" type="text" x-model="title"
+                   @input="title && scheduleDupCheck()"
+                   placeholder="Song title" />
           </div>
           <div class="form-group">
             <label for="artistInput">Artist (optional)</label>
@@ -72,6 +87,7 @@
           <div class="form-group">
             <label for="ytUrl">YouTube URL</label>
             <input id="ytUrl" type="url" x-model="youtubeUrl"
+                   @input="scheduleDupCheck()"
                    placeholder="https://www.youtube.com/watch?v=…" />
           </div>
         </div>
@@ -124,6 +140,10 @@
         errorMsg: '',
         pollStatus: 'pending',
         pollInterval: null,
+        duplicates: [],
+        duplicateChecked: false,
+        submitAnyway: false,
+        _dupCheckTimer: null,
 
         init() {
           fetch('/api/submitters')
@@ -136,6 +156,52 @@
           this.file = event.target.files[0];
         },
 
+        extractVideoId(url) {
+          try {
+            const u = new URL(url);
+            if (u.hostname === 'youtu.be') return u.pathname.slice(1).split('?')[0] || null;
+            if (['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(u.hostname)) {
+              return u.searchParams.get('v');
+            }
+          } catch { /* invalid URL */ }
+          return null;
+        },
+
+        scheduleDupCheck() {
+          clearTimeout(this._dupCheckTimer);
+          this.duplicates = [];
+          this.duplicateChecked = false;
+          this.submitAnyway = false;
+          this._dupCheckTimer = setTimeout(() => this.checkDuplicate(), 500);
+        },
+
+        async checkDuplicate() {
+          const params = new URLSearchParams();
+          if (this.tab === 'youtube' && this.youtubeUrl) {
+            const vid = this.extractVideoId(this.youtubeUrl);
+            if (vid) {
+              params.set('video_id', vid);
+              try {
+                const oe = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${vid}&format=json`);
+                if (oe.ok) {
+                  const meta = await oe.json();
+                  if (meta.title) params.set('title', meta.title);
+                  if (meta.author_name) params.set('artist', meta.author_name);
+                }
+              } catch { /* oEmbed unavailable for this video */ }
+            }
+          }
+          if (this.title) params.set('title', this.title);
+          if (this.artist) params.set('artist', this.artist);
+          if (!params.toString()) return;
+          try {
+            const res = await fetch(`/api/check-duplicate?${params}`);
+            const data = await res.json();
+            this.duplicates = data.matches;
+          } catch { /* ignore network errors during check */ }
+          this.duplicateChecked = true;
+        },
+
         async submitSong() {
           this.errorMsg = '';
           this.warning = '';
@@ -143,6 +209,18 @@
 
           if (!this.submitter.trim()) {
             this.errorMsg = 'Please enter your name.';
+            return;
+          }
+
+          // If the debounce hasn't fired yet or the fetch hasn't returned, run the check now
+          if (!this.duplicateChecked) {
+            clearTimeout(this._dupCheckTimer);
+            this._dupCheckTimer = null;
+            await this.checkDuplicate();
+          }
+
+          if (this.duplicates.length > 0 && !this.submitAnyway) {
+            // Warning UI is shown via x-show — don't proceed
             return;
           }
 
@@ -179,6 +257,9 @@
             this.title = '';
             this.artist = '';
             this.comment = '';
+            this.duplicates = [];
+            this.duplicateChecked = false;
+            this.submitAnyway = false;
             document.getElementById('fileInput').value = '';
             this.pollStatus = 'pending';
             this.startPolling(data.track_id);
