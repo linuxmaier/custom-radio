@@ -1,8 +1,10 @@
+import difflib
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from database import db
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -18,8 +20,29 @@ MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB
 MAX_PENDING_PER_SUBMITTER = 5
 
 
+DUPLICATE_SIMILARITY_THRESHOLD = 0.75
+DUPLICATE_MAX_RESULTS = 3
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _extract_youtube_video_id(url: str) -> str | None:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host == "youtu.be":
+        return parsed.path.lstrip("/").split("?")[0] or None
+    if host in ("youtube.com", "www.youtube.com", "m.youtube.com"):
+        qs = parse_qs(parsed.query)
+        return qs.get("v", [None])[0]
+    return None
+
+
+def _normalize_title(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"[\(\[][^\)\]]*[\)\]]", "", text)
+    return " ".join(text.split())
 
 
 def _create_track_and_job(
@@ -31,19 +54,80 @@ def _create_track_and_job(
     source_type: str,
     source_url: str | None = None,
     comment: str | None = None,
+    youtube_video_id: str | None = None,
 ):
     conn.execute(
         """
         INSERT INTO tracks (id, title, artist, submitter, source_type, source_url,
-                            status, submitted_at, comment)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                            status, submitted_at, comment, youtube_video_id)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
         """,
-        (track_id, title, artist, submitter, source_type, source_url, _now(), comment),
+        (track_id, title, artist, submitter, source_type, source_url, _now(), comment, youtube_video_id),
     )
     conn.execute(
         "INSERT INTO jobs (track_id, status, created_at) VALUES (?, 'pending', ?)",
         (track_id, _now()),
     )
+
+
+@router.get("/check-duplicate")
+def check_duplicate(
+    video_id: str | None = None,
+    title: str | None = None,
+    artist: str | None = None,
+):
+    matches = []
+
+    with db() as conn:
+        if video_id:
+            row = conn.execute(
+                "SELECT id, title, artist, submitter FROM tracks WHERE youtube_video_id = ? AND status != 'failed'",
+                (video_id,),
+            ).fetchone()
+            if row:
+                matches.append(
+                    {
+                        "id": row["id"],
+                        "title": row["title"],
+                        "artist": row["artist"],
+                        "submitter": row["submitter"],
+                        "similarity": 1.0,
+                        "match_type": "video_id",
+                    }
+                )
+
+        if not matches and title:
+            norm_query_title = _normalize_title(title)
+            norm_query_artist = _normalize_title(artist) if artist else None
+            rows = conn.execute(
+                "SELECT id, title, artist, submitter FROM tracks WHERE status != 'failed' AND title != ''"
+            ).fetchall()
+            candidates = []
+            for row in rows:
+                norm_title = _normalize_title(row["title"])
+                title_sim = difflib.SequenceMatcher(None, norm_query_title, norm_title).ratio()
+                if norm_query_artist and row["artist"]:
+                    artist_sim = difflib.SequenceMatcher(
+                        None, norm_query_artist, _normalize_title(row["artist"])
+                    ).ratio()
+                    sim = title_sim * 0.8 + artist_sim * 0.2
+                else:
+                    sim = title_sim
+                if sim >= DUPLICATE_SIMILARITY_THRESHOLD:
+                    candidates.append(
+                        {
+                            "id": row["id"],
+                            "title": row["title"],
+                            "artist": row["artist"],
+                            "submitter": row["submitter"],
+                            "similarity": round(sim, 3),
+                            "match_type": "fuzzy",
+                        }
+                    )
+            candidates.sort(key=lambda x: x["similarity"], reverse=True)
+            matches = candidates[:DUPLICATE_MAX_RESULTS]
+
+    return {"matches": matches}
 
 
 @router.post("/submit")
@@ -121,6 +205,8 @@ async def submit_track(
         if urlparse(url).netloc.lower() not in YOUTUBE_HOSTS:
             raise HTTPException(400, "Only YouTube URLs are supported (youtube.com, youtu.be)")
 
+        video_id = _extract_youtube_video_id(url)
+
         with db() as conn:
             _create_track_and_job(
                 conn,
@@ -131,6 +217,7 @@ async def submit_track(
                 "youtube",
                 url,
                 comment=comment,
+                youtube_video_id=video_id,
             )
 
         logger.info(f"YouTube submission: track_id={track_id} url={url}")

@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from contextlib import contextmanager
+from urllib.parse import parse_qs, urlparse
 
 DB_PATH = os.environ.get("DB_PATH", "/data/radio.db")
 
@@ -24,7 +25,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     error_msg TEXT,
     submitted_at TEXT NOT NULL,
     ready_at TEXT,
-    comment TEXT
+    comment TEXT,
+    youtube_video_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS play_log (
@@ -102,6 +104,26 @@ def init_db():
             conn.execute("ALTER TABLE tracks ADD COLUMN comment TEXT")
         except sqlite3.OperationalError:
             pass  # column already exists
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN youtube_video_id TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        # Backfill youtube_video_id from source_url for tracks submitted before this column existed
+        rows = conn.execute(
+            "SELECT id, source_url FROM tracks"
+            " WHERE source_type='youtube' AND youtube_video_id IS NULL AND source_url IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            parsed = urlparse(row["source_url"])
+            host = (parsed.hostname or "").lower()
+            vid = None
+            if host == "youtu.be":
+                vid = parsed.path.lstrip("/").split("?")[0] or None
+            elif host in ("youtube.com", "www.youtube.com", "m.youtube.com"):
+                qs = parse_qs(parsed.query)
+                vid = qs.get("v", [None])[0]
+            if vid:
+                conn.execute("UPDATE tracks SET youtube_video_id=? WHERE id=?", (vid, row["id"]))
         conn.commit()
     finally:
         conn.close()
