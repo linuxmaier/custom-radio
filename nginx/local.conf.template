@@ -23,6 +23,12 @@ server {
         add_header Content-Type text/plain;
     }
 
+    # PWA assets must be publicly fetchable (no auth) so browsers can
+    # install the app, load the manifest, and register the service worker.
+    location = /sw.js { auth_basic off; try_files $uri =404; }
+    location = /api/manifest.json { auth_basic off; proxy_pass http://api:8000/manifest.json; }
+    location ~* ^/static/(icon-|apple-touch-icon|badge-|favicon).*\.png$ { auth_basic off; try_files $uri =404; }
+
     location /api/internal/ {
         deny all;
     }

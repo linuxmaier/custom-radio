@@ -13,7 +13,7 @@
 
   var name = localStorage.getItem('station_name') || 'Radio';
   var script = document.currentScript || document.scripts[document.scripts.length - 1];
-  script.insertAdjacentHTML('beforebegin', '<nav><a id="nav-logo" class="logo" href="/">\uD83D\uDCFB ' + name + '</a>' + items + '</nav>');
+  script.insertAdjacentHTML('beforebegin', '<nav><a id="nav-logo" class="logo" href="/"><img src="/static/badge-96.png" alt="" width="20" height="20" style="vertical-align:middle;margin-right:0.4em;"> ' + name + '</a>' + items + '</nav>');
 
   // Register service worker for PWA support
   if ('serviceWorker' in navigator) {
@@ -26,7 +26,11 @@
       var fetched = data.station_name || 'Radio';
       localStorage.setItem('station_name', fetched);
       var logo = document.getElementById('nav-logo');
-      if (logo && fetched !== name) logo.textContent = '\uD83D\uDCFB ' + fetched;
+      if (logo && fetched !== name) {
+        var img = logo.querySelector('img');
+        logo.textContent = ' ' + fetched;
+        if (img) logo.prepend(img);
+      }
       document.title = fetched + ' \u2014 ' + document.title;
     })
     .catch(function () {});

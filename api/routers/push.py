@@ -20,7 +20,7 @@ def get_manifest():
         "scope": "/",
         "display": "standalone",
         "theme_color": "#6c63ff",
-        "background_color": "#1a1a2e",
+        "background_color": "#0f1117",
         "icons": [
             {
                 "src": "/static/icon-192.png",
@@ -31,6 +31,18 @@ def get_manifest():
                 "src": "/static/icon-512.png",
                 "sizes": "512x512",
                 "type": "image/png",
+            },
+            {
+                "src": "/static/icon-512-maskable.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable",
+            },
+            {
+                "src": "/static/badge-96.png",
+                "sizes": "96x96",
+                "type": "image/png",
+                "purpose": "monochrome",
             },
         ],
     }
