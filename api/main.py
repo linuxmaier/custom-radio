@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from database import init_db
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import admin, internal, status, submit
+from routers import admin, internal, push, status, submit
 from worker import reset_stuck_jobs, start_worker, stop_worker
 
 logging.basicConfig(
@@ -43,6 +43,7 @@ app.include_router(submit.router)
 app.include_router(internal.router)
 app.include_router(admin.router)
 app.include_router(status.router)
+app.include_router(push.router)
 
 
 @app.get("/health")

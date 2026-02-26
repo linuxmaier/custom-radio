@@ -4,7 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Now Playing</title>
+  <link rel="manifest" href="/api/manifest.json" />
   <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/push.js"></script>
   <script defer src="/static/alpinejs-3.15.8.min.js"></script>
 </head>
 <body>
@@ -55,6 +57,30 @@
       <div class="artist" style="color:var(--muted)">Nothing playing yet. Submit a song!</div>
     </div>
 
+    <!-- Push notifications -->
+    <div class="card" x-show="pushSupported" x-cloak>
+      <h2>Notifications</h2>
+      <p style="color:var(--muted); font-size:0.875rem; margin-bottom:0.75rem;">
+        Get notified when a family member adds a new song.
+      </p>
+
+      <div x-show="pushNeedsInstall === 'ios'" style="color:var(--muted); font-size:0.875rem;">
+        To enable notifications on iOS, tap <strong>Share → Add to Home Screen</strong> first,
+        then open the app from your home screen and come back here.
+      </div>
+
+      <div x-show="pushNeedsInstall !== 'ios'">
+        <button class="btn" :class="pushSubscribed ? 'btn-secondary' : ''"
+                :disabled="pushBusy"
+                @click="togglePush()">
+          <span x-show="pushBusy" class="spinner"></span>
+          <span x-text="pushSubscribed ? 'Turn off notifications' : 'Turn on notifications'"></span>
+        </button>
+        <div x-show="pushError" class="alert error" x-cloak style="margin-top:0.5rem;"
+             x-text="pushError"></div>
+      </div>
+    </div>
+
     <!-- Pending count -->
     <div x-show="pendingCount > 0" class="alert warning" x-cloak>
       <span x-text="pendingCount"></span> song(s) processing in the background.
@@ -97,6 +123,11 @@
         pausedAt: null,
         totalBehindMs: 0,
         streamUrl: `${location.protocol}//${location.hostname}/stream`,
+        pushSupported: false,
+        pushNeedsInstall: false,
+        pushSubscribed: false,
+        pushBusy: false,
+        pushError: '',
 
         async init() {
           const audio = this.$refs.audio;
@@ -137,6 +168,14 @@
 
           await this.refresh();
           setInterval(() => this.refresh(), 15000);
+
+          // Push notification state
+          const ph = window.pushHelpers;
+          if (ph && ph.isSupported()) {
+            this.pushSupported = true;
+            this.pushNeedsInstall = ph.needsInstall();
+            this.pushSubscribed = await ph.isSubscribed();
+          }
         },
 
         togglePlay() {
@@ -179,6 +218,24 @@
             this.loaded = true;
           } catch (e) {
             console.error('Status fetch failed', e);
+          }
+        },
+
+        async togglePush() {
+          this.pushBusy = true;
+          this.pushError = '';
+          try {
+            if (this.pushSubscribed) {
+              await window.pushHelpers.unsubscribe();
+              this.pushSubscribed = false;
+            } else {
+              await window.pushHelpers.subscribe();
+              this.pushSubscribed = true;
+            }
+          } catch (e) {
+            this.pushError = e.message || 'Something went wrong. Please try again.';
+          } finally {
+            this.pushBusy = false;
           }
         },
 

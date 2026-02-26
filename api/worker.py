@@ -7,6 +7,7 @@ from alerts import send_alert
 from audio import extract_features
 from database import db
 from downloader import convert_to_standard_mp3, download_youtube
+from push import send_push_to_all
 from scheduler import update_feature_bounds
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,10 @@ def _process_job(job_id: int, track_id: str):
             )
 
         logger.info(f"Job {job_id} completed: track {track_id} ready at {final_path}")
+        send_push_to_all(
+            title=f"{submitter} added a song!",
+            body=f'"{title}" is queued and ready to play.',
+        )
 
     except Exception as e:
         error_msg = str(e)

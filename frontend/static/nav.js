@@ -15,6 +15,11 @@
   var script = document.currentScript || document.scripts[document.scripts.length - 1];
   script.insertAdjacentHTML('beforebegin', '<nav><a id="nav-logo" class="logo" href="/">\uD83D\uDCFB ' + name + '</a>' + items + '</nav>');
 
+  // Register service worker for PWA support
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(function () {});
+  }
+
   fetch('/api/status')
     .then(function (r) { return r.json(); })
     .then(function (data) {

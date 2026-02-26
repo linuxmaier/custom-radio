@@ -44,3 +44,5 @@ websockets==16.0
 yt-dlp>=2026.2.21
 # yt-dlp plugin: generates YouTube po_token via bgutil-provider container
 bgutil-ytdlp-pot-provider
+# Web Push notifications via VAPID (optional — no-op if VAPID_PRIVATE_KEY unset)
+pywebpush>=2.0.0
