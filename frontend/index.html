@@ -79,8 +79,7 @@
         <div class="form-group">
           <label for="commentInput">Comment (optional — shown on the Now Playing page)</label>
           <textarea id="commentInput" x-model="comment" maxlength="280"
-                    placeholder="A note for the family…" rows="2"
-                    style="resize:vertical;"></textarea>
+                    placeholder="A note for the family…" rows="2"></textarea>
         </div>
 
         <button type="submit" class="btn" :disabled="submitting">
@@ -175,6 +174,12 @@
             }
             this.successTrackId = data.track_id;
             if (data.warning) this.warning = data.warning;
+            this.youtubeUrl = '';
+            this.file = null;
+            this.title = '';
+            this.artist = '';
+            this.comment = '';
+            document.getElementById('fileInput').value = '';
             this.pollStatus = 'pending';
             this.startPolling(data.track_id);
           } catch (e) {
