@@ -3,6 +3,7 @@
   var links = [
     { href: '/', label: 'Submit' },
     { href: '/playing.html', label: 'Now Playing' },
+    { href: '/library.html', label: 'Library' },
     { href: '/admin.html', label: 'Admin' },
   ];
   var items = links.map(function (l) {

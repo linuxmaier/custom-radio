@@ -100,6 +100,37 @@ def get_library():
     return {"tracks": [_track_row_to_dict(r) for r in rows]}
 
 
+@router.get("/public-library")
+def get_public_library():
+    """Ready tracks with play counts, ordered by submitter then title."""
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT t.id, t.title, t.artist, t.submitter, t.submitted_at, t.duration_s,
+                   COUNT(pl.id) AS play_count
+            FROM tracks t
+            LEFT JOIN play_log pl ON pl.track_id = t.id
+            WHERE t.status = 'ready'
+            GROUP BY t.id
+            ORDER BY t.submitter COLLATE NOCASE, t.title COLLATE NOCASE
+            """
+        ).fetchall()
+    return {
+        "tracks": [
+            {
+                "id": r["id"],
+                "title": r["title"],
+                "artist": r["artist"],
+                "submitter": r["submitter"],
+                "submitted_at": r["submitted_at"],
+                "duration_s": r["duration_s"],
+                "play_count": r["play_count"],
+            }
+            for r in rows
+        ]
+    }
+
+
 @router.get("/submitters")
 def list_submitters():
     with db() as conn:

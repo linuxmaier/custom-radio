@@ -130,6 +130,10 @@ gh pr create --title "..." --body "..."
 # CI runs; merge when green
 ```
 
+PR descriptions must include:
+1. **What problem or enhancement this addresses** — reference the issue number when one exists (e.g. "Closes #38")
+2. **A brief summary of the approach** — the key design choices made and why, so the diff can be understood in context
+
 ## Development Tips
 
 - **Local full-stack**: `docker compose up --build` — `docker-compose.override.yml` is automatically applied and handles local differences (HTTP-only nginx, certbot disabled, `SERVER_HOSTNAME=localhost`)
