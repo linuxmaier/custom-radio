@@ -117,6 +117,19 @@ The admin page also has a **YouTube Cookies** card that shows whether a cookies 
 
 - **`gh` infers the repo from the current directory**: Run `gh issue list`, `gh pr list`, etc. directly without `--repo` when already inside the repo. Avoid command substitution like `--repo $(git remote get-url origin)` — it triggers an extra approval prompt in Claude Code UI.
 
+## Git Workflow
+
+Use PRs for all substantive changes (new features, bug fixes, refactors). Direct pushes to `main` are acceptable for docs-only or trivial fixes. The CI workflow (`.github/workflows/ci.yml`) only triggers on `pull_request`, so PRs are required for CI to run.
+
+Typical flow:
+```bash
+git checkout -b branch-name
+# make changes and commit
+git push -u origin branch-name
+gh pr create --title "..." --body "..."
+# CI runs; merge when green
+```
+
 ## Development Tips
 
 - **Local full-stack**: `docker compose up --build` — `docker-compose.override.yml` is automatically applied and handles local differences (HTTP-only nginx, certbot disabled, `SERVER_HOSTNAME=localhost`)
