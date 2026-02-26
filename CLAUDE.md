@@ -53,6 +53,10 @@ Rotation block tracking uses `rotation_block_start_log_id` (a `play_log.id` wate
 
 **Per-track cooldown** (`scheduler.py`): once the total `duration_s` of ready tracks exceeds `COOLDOWN_THRESHOLD_S` (3600 s), the rotation query adds `AND t.id NOT IN (SELECT track_id FROM play_log WHERE played_at > ?)` with a cutoff 60 minutes ago (`COOLDOWN_WINDOW_S`). `_pick_rotation_track` accepts a `depth` counter: if a submitter has no eligible tracks, their turn is skipped and the function recurses with `depth + 1`. When `depth >= len(submitters)`, `_pick_global_fallback()` is called, which picks the globally least-recently-played ready track (ignoring cooldown) to prevent silence.
 
+**Track selection within a submitter's block** (`scheduler.py:_pick_rotation_track`): two-tier weighted random:
+1. Tracks with 0 plays are guaranteed — if any exist, one is picked at random (`random.choice`).
+2. Tracks with >0 plays use weighted random: `weight = 1/sqrt(play_count + 1)`. This gives less-played tracks higher odds without making them guaranteed, and ensures older/well-played tracks still have an appreciable chance each block.
+
 ## Audio Features
 
 Extracted by `api/audio.py` using librosa:

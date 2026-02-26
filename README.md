@@ -80,7 +80,7 @@ All pages are behind HTTP Basic Auth (shared family username/password from `.env
 
 Switchable live from the admin page — no restart needed.
 
-- **Rotation** (default): Round-robin through submitters, playing N songs per block (configurable, default 3). Once the library exceeds 1 hour of total runtime, a per-track cooldown kicks in: no track replays within a 60-minute window. If all of a submitter's tracks are on cooldown their turn is skipped; if every submitter is on cooldown the globally least-recently-played track is used as a fallback to avoid silence.
+- **Rotation** (default): Round-robin through submitters, playing N songs per block (configurable, default 3). Once the library exceeds 1 hour of total runtime, a per-track cooldown kicks in: no track replays within a 60-minute window. If all of a submitter's tracks are on cooldown their turn is skipped; if every submitter is on cooldown the globally least-recently-played track is used as a fallback to avoid silence. Within a block, unplayed tracks are always picked first (random among them); once all tracks have been played at least once, selection is weighted random with `weight = 1/sqrt(play_count + 1)` so less-played tracks are more likely but every track has a real chance.
 - **Mood**: Picks the next track by minimum Euclidean distance in audio feature space from the currently playing track. Features: tempo (BPM), RMS energy, spectral centroid, zero-crossing rate.
 
 ## Submitting Music
