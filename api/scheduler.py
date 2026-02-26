@@ -3,15 +3,13 @@ import math
 import random
 from datetime import datetime, timedelta, timezone
 
-import numpy as np
-
+from audio import AudioFeatures, euclidean_distance, normalize_features
 from database import db, get_config, set_config
-from audio import normalize_features, euclidean_distance, AudioFeatures
 
 logger = logging.getLogger(__name__)
 
 COOLDOWN_THRESHOLD_S = 3600  # activate when total library runtime exceeds 60 min
-COOLDOWN_WINDOW_S    = 3600  # don't replay a track within 60 min
+COOLDOWN_WINDOW_S = 3600  # don't replay a track within 60 min
 
 
 def _total_ready_runtime_s() -> float:
@@ -29,19 +27,20 @@ def _pick_global_fallback() -> dict | None:
     """Pick the globally least-recently-played ready track, ignoring cooldown."""
     last_returned_id = get_config("last_returned_track_id") or ""
     with db() as conn:
-        last_played = conn.execute(
-            "SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1"
-        ).fetchone()
+        last_played = conn.execute("SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1").fetchone()
         last_played_id = last_played["track_id"] if last_played else ""
 
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
             WHERE t.status='ready' AND t.id != ? AND t.id != ?
             ORDER BY COALESCE(
                 (SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id), ''
             ) ASC, t.submitted_at ASC
             LIMIT 1
-        """, (last_played_id, last_returned_id)).fetchone()
+        """,
+            (last_played_id, last_returned_id),
+        ).fetchone()
 
         if not row:  # truly last resort — allow any ready track
             row = conn.execute("""
@@ -57,7 +56,12 @@ def _pick_global_fallback() -> dict | None:
         return None
     set_config("last_returned_track_id", row["id"])
     logger.info("Global cooldown fallback: returning least-recently-played track")
-    return {"id": row["id"], "title": row["title"], "artist": row["artist"], "file_path": row["file_path"]}
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "artist": row["artist"],
+        "file_path": row["file_path"],
+    }
 
 
 def get_next_track() -> dict | None:
@@ -77,9 +81,7 @@ def get_next_track() -> dict | None:
 def _pick_rotation_track(depth: int = 0) -> dict | None:
     """Round-robin through submitters, N tracks per block."""
     with db() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter"
-        ).fetchall()
+        rows = conn.execute("SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter").fetchall()
         submitters = [r["submitter"] for r in rows]
 
     if not submitters:
@@ -109,9 +111,7 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
         ).fetchone()["n"]
 
         if last_returned_id:
-            lr = conn.execute(
-                "SELECT submitter FROM tracks WHERE id = ?", (last_returned_id,)
-            ).fetchone()
+            lr = conn.execute("SELECT submitter FROM tracks WHERE id = ?", (last_returned_id,)).fetchone()
             if lr and lr["submitter"] == current_submitter:
                 played_this_block += 1
 
@@ -119,9 +119,7 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
         next_idx = (idx + 1) % len(submitters)
         set_config("rotation_current_submitter_idx", str(next_idx))
         with db() as conn:
-            latest = conn.execute(
-                "SELECT COALESCE(MAX(id), 0) as n FROM play_log"
-            ).fetchone()["n"]
+            latest = conn.execute("SELECT COALESCE(MAX(id), 0) as n FROM play_log").fetchone()["n"]
         set_config("rotation_block_start_log_id", str(latest))
 
     if played_this_block >= tracks_per_block:
@@ -136,9 +134,7 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
     # When cooldown is active, exclude tracks played within the cooldown window.
     cooldown_active = _cooldown_is_active()
     with db() as conn:
-        last_played = conn.execute(
-            "SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1"
-        ).fetchone()
+        last_played = conn.execute("SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1").fetchone()
         last_played_id = last_played["track_id"] if last_played else ""
 
         if cooldown_active:
@@ -191,7 +187,12 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
 
     set_config("last_returned_track_id", row["id"])
     logger.info(f"Rotation: submitter={current_submitter} played_this_block={played_this_block}/{tracks_per_block}")
-    return {"id": row["id"], "title": row["title"], "artist": row["artist"], "file_path": row["file_path"]}
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "artist": row["artist"],
+        "file_path": row["file_path"],
+    }
 
 
 def _pick_mood_track() -> str:
@@ -293,7 +294,12 @@ def _pick_mood_track() -> str:
         return None
     set_config("last_returned_track_id", best_id)
     logger.info(f"Mood: picked track with distance={best_dist:.4f}")
-    return {"id": best_id, "title": best_title, "artist": best_artist, "file_path": best_path}
+    return {
+        "id": best_id,
+        "title": best_title,
+        "artist": best_artist,
+        "file_path": best_path,
+    }
 
 
 def update_feature_bounds(features: AudioFeatures):

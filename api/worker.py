@@ -1,14 +1,13 @@
 import logging
 import os
 import threading
-import time
 from datetime import datetime, timezone
 
-from database import db, get_connection
-from downloader import download_youtube, convert_to_standard_mp3
-from audio import extract_features
-from scheduler import update_feature_bounds
 from alerts import send_alert
+from audio import extract_features
+from database import db
+from downloader import convert_to_standard_mp3, download_youtube
+from scheduler import update_feature_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +64,7 @@ def _process_job(job_id: int, track_id: str):
                 raise RuntimeError(f"Uploaded file not found for track {track_id}")
             # Title/artist already set at submission time; just get them
             with db() as conn:
-                t = conn.execute(
-                    "SELECT title, artist FROM tracks WHERE id=?", (track_id,)
-                ).fetchone()
+                t = conn.execute("SELECT title, artist FROM tracks WHERE id=?", (track_id,)).fetchone()
             title = t["title"]
             artist = t["artist"]
 
@@ -88,17 +85,27 @@ def _process_job(job_id: int, track_id: str):
 
         # Get duration via ffprobe
         import subprocess
+
         result = subprocess.run(
             [
-                "ffprobe", "-v", "quiet", "-print_format", "json",
-                "-show_streams", final_path,
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_streams",
+                final_path,
             ],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         duration_s = None
         if result.returncode == 0:
             import json
-            info = json.load(result.stdout if hasattr(result.stdout, "read") else __import__("io").StringIO(result.stdout))
+
+            info = json.load(
+                result.stdout if hasattr(result.stdout, "read") else __import__("io").StringIO(result.stdout)
+            )
             for stream in info.get("streams", []):
                 if stream.get("codec_type") == "audio":
                     duration_s = float(stream.get("duration", 0)) or None
@@ -115,10 +122,16 @@ def _process_job(job_id: int, track_id: str):
                 WHERE id=?
                 """,
                 (
-                    title, artist, final_path, duration_s,
-                    features.tempo_bpm, features.rms_energy,
-                    features.spectral_centroid, features.zero_crossing_rate,
-                    _now(), track_id,
+                    title,
+                    artist,
+                    final_path,
+                    duration_s,
+                    features.tempo_bpm,
+                    features.rms_energy,
+                    features.spectral_centroid,
+                    features.zero_crossing_rate,
+                    _now(),
+                    track_id,
                 ),
             )
             conn.execute(
@@ -163,9 +176,7 @@ def reset_stuck_jobs():
     so it is guaranteed to run against the correct DB and see committed state.
     """
     with db() as conn:
-        stuck = conn.execute(
-            "SELECT id, track_id FROM jobs WHERE status='processing'"
-        ).fetchall()
+        stuck = conn.execute("SELECT id, track_id FROM jobs WHERE status='processing'").fetchall()
         for row in stuck:
             conn.execute(
                 "UPDATE jobs SET status='pending', started_at=NULL WHERE id=?",

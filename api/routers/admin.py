@@ -1,13 +1,11 @@
+import logging
 import os
 import socket
-import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-
 from database import db, get_config, set_config
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from pydantic import BaseModel
 
 COOKIES_PATH = "/app/cookies/youtube.txt"
 
@@ -86,9 +84,7 @@ def youtube_cookies_status(auth=Depends(require_admin)):
     exists = os.path.exists(COOKIES_PATH)
     updated_at = None
     if exists:
-        updated_at = datetime.fromtimestamp(
-            os.path.getmtime(COOKIES_PATH), timezone.utc
-        ).isoformat()
+        updated_at = datetime.fromtimestamp(os.path.getmtime(COOKIES_PATH), timezone.utc).isoformat()
     return {"present": exists, "updated_at": updated_at}
 
 
@@ -107,9 +103,7 @@ async def upload_youtube_cookies(file: UploadFile = File(...), auth=Depends(requ
 def delete_track(track_id: str, auth=Depends(require_admin)):
     """Remove a track from the library and delete its file."""
     with db() as conn:
-        row = conn.execute(
-            "SELECT file_path FROM tracks WHERE id=?", (track_id,)
-        ).fetchone()
+        row = conn.execute("SELECT file_path FROM tracks WHERE id=?", (track_id,)).fetchone()
         if not row:
             raise HTTPException(404, "Track not found")
 

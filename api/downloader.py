@@ -1,7 +1,6 @@
 import logging
 import os
 import subprocess
-import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +19,19 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
     cmd = [
         "yt-dlp",
         "--extract-audio",
-        "--audio-format", "mp3",
-        "--audio-quality", "0",
-        "--output", output_template,
+        "--audio-format",
+        "mp3",
+        "--audio-quality",
+        "0",
+        "--output",
+        output_template,
         "--no-playlist",
         "--write-info-json",
         "--quiet",
-        "--remote-components", "ejs:github",
-        "--extractor-args", "youtubepot-bgutilhttp:base_url=http://bgutil-provider:4416",
+        "--remote-components",
+        "ejs:github",
+        "--extractor-args",
+        "youtubepot-bgutilhttp:base_url=http://bgutil-provider:4416",
     ]
 
     if os.path.exists(COOKIES_PATH):
@@ -55,6 +59,7 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
 
     if os.path.exists(info_path):
         import json
+
         with open(info_path) as f:
             info = json.load(f)
         title = info.get("title", title)
@@ -75,7 +80,6 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
     return title, artist, output_path
 
 
-
 def convert_to_standard_mp3(input_path: str, track_id: str, comment_tag: str, title: str = "", artist: str = "") -> str:
     """
     Convert any audio file to standard MP3/128kbps with ID3 tags.
@@ -87,16 +91,25 @@ def convert_to_standard_mp3(input_path: str, track_id: str, comment_tag: str, ti
 
     cmd = [
         "ffmpeg",
-        "-i", input_path,
+        "-i",
+        input_path,
         "-vn",
-        "-acodec", "libmp3lame",
-        "-ab", "128k",
-        "-ar", "44100",
-        "-ac", "2",
-        "-id3v2_version", "3",
-        "-metadata", f"comment={comment_tag}",
-        "-metadata", f"title={title}",
-        "-metadata", f"artist={artist}",
+        "-acodec",
+        "libmp3lame",
+        "-ab",
+        "128k",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        "-id3v2_version",
+        "3",
+        "-metadata",
+        f"comment={comment_tag}",
+        "-metadata",
+        f"title={title}",
+        "-metadata",
+        f"artist={artist}",
         "-y",
         output_path,
     ]

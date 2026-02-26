@@ -1,7 +1,7 @@
 import logging
-import numpy as np
-import librosa
 
+import librosa
+import numpy as np
 from models import AudioFeatures
 
 logger = logging.getLogger(__name__)
@@ -50,17 +50,28 @@ def extract_features(file_path: str) -> AudioFeatures:
 
 def normalize_features(features: AudioFeatures, mins: dict, maxs: dict) -> np.ndarray:
     """Normalize features to 0-1 range using running min/max."""
+
     def norm(val, lo, hi):
         if hi == lo:
             return 0.0
         return (val - lo) / (hi - lo)
 
-    return np.array([
-        norm(features.tempo_bpm, mins["tempo_bpm"], maxs["tempo_bpm"]),
-        norm(features.rms_energy, mins["rms_energy"], maxs["rms_energy"]),
-        norm(features.spectral_centroid, mins["spectral_centroid"], maxs["spectral_centroid"]),
-        norm(features.zero_crossing_rate, mins["zero_crossing_rate"], maxs["zero_crossing_rate"]),
-    ])
+    return np.array(
+        [
+            norm(features.tempo_bpm, mins["tempo_bpm"], maxs["tempo_bpm"]),
+            norm(features.rms_energy, mins["rms_energy"], maxs["rms_energy"]),
+            norm(
+                features.spectral_centroid,
+                mins["spectral_centroid"],
+                maxs["spectral_centroid"],
+            ),
+            norm(
+                features.zero_crossing_rate,
+                mins["zero_crossing_rate"],
+                maxs["zero_crossing_rate"],
+            ),
+        ]
+    )
 
 
 def euclidean_distance(a: np.ndarray, b: np.ndarray) -> float:

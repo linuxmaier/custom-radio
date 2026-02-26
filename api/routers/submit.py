@@ -1,14 +1,12 @@
+import logging
 import os
 import uuid
-import shutil
-import logging
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse
-
 from database import db
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -66,10 +64,13 @@ async def submit_track(
     with db() as conn:
         pending = conn.execute(
             "SELECT COUNT(*) FROM tracks WHERE submitter=? AND status IN ('pending', 'processing')",
-            (submitter,)
+            (submitter,),
         ).fetchone()[0]
     if pending >= MAX_PENDING_PER_SUBMITTER:
-        raise HTTPException(429, f"You already have {pending} songs being processed. Please wait for them to finish before adding more.")
+        raise HTTPException(
+            429,
+            f"You already have {pending} songs being processed. Please wait for them to finish before adding more.",
+        )
 
     # Determine source
     has_file = bool(file is not None and file.filename)
@@ -103,8 +104,13 @@ async def submit_track(
 
         with db() as conn:
             _create_track_and_job(
-                conn, track_id, track_title, track_artist,
-                submitter, "upload", comment=comment,
+                conn,
+                track_id,
+                track_title,
+                track_artist,
+                submitter,
+                "upload",
+                comment=comment,
             )
 
         logger.info(f"Upload submission: track_id={track_id} file={dest}")
@@ -117,9 +123,14 @@ async def submit_track(
 
         with db() as conn:
             _create_track_and_job(
-                conn, track_id,
-                title or "Pending...", artist or "Pending...",
-                submitter, "youtube", url, comment=comment,
+                conn,
+                track_id,
+                title or "Pending...",
+                artist or "Pending...",
+                submitter,
+                "youtube",
+                url,
+                comment=comment,
             )
 
         logger.info(f"YouTube submission: track_id={track_id} url={url}")

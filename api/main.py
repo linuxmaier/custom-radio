@@ -2,12 +2,11 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+from database import init_db
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from database import init_db
-from worker import start_worker, stop_worker, reset_stuck_jobs
-from routers import submit, internal, admin, status
+from routers import admin, internal, status, submit
+from worker import reset_stuck_jobs, start_worker, stop_worker
 
 logging.basicConfig(
     level=logging.INFO,

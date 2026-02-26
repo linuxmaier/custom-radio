@@ -27,6 +27,9 @@ venv/
 media/
 data/
 
+# ah session data
+.ah/
+
 # Editor
 .DS_Store
 *.swp

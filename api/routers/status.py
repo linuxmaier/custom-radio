@@ -1,9 +1,8 @@
 import logging
 import os
 
-from fastapi import APIRouter, HTTPException
-
 from database import db
+from fastapi import APIRouter, HTTPException
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -75,13 +74,15 @@ def get_status():
     for i, row in enumerate(recent_rows):
         if i == 0:
             continue  # skip now-playing
-        recent.append({
-            "id": row["id"],
-            "title": row["title"],
-            "artist": row["artist"],
-            "submitter": row["submitter"],
-            "played_at": row["played_at"],
-        })
+        recent.append(
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "artist": row["artist"],
+                "submitter": row["submitter"],
+                "played_at": row["played_at"],
+            }
+        )
 
     return {
         "now_playing": now_playing,
@@ -95,18 +96,14 @@ def get_status():
 def get_library():
     """All tracks with their status."""
     with db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM tracks ORDER BY submitted_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM tracks ORDER BY submitted_at DESC").fetchall()
     return {"tracks": [_track_row_to_dict(r) for r in rows]}
 
 
 @router.get("/submitters")
 def list_submitters():
     with db() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT submitter FROM tracks ORDER BY submitter"
-        ).fetchall()
+        rows = conn.execute("SELECT DISTINCT submitter FROM tracks ORDER BY submitter").fetchall()
     return {"submitters": [r["submitter"] for r in rows]}
 
 
@@ -114,9 +111,7 @@ def list_submitters():
 def get_track(track_id: str):
     """Single track details (for polling submission status)."""
     with db() as conn:
-        row = conn.execute(
-            "SELECT * FROM tracks WHERE id=?", (track_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM tracks WHERE id=?", (track_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Track not found")
     return _track_row_to_dict(row)

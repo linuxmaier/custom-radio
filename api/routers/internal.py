@@ -1,10 +1,9 @@
 import logging
 from datetime import datetime, timezone
 
+from database import db
 from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
-
-from database import db, get_config
 from scheduler import get_next_track
 
 logger = logging.getLogger(__name__)
@@ -17,8 +16,10 @@ def _now() -> str:
 
 def _build_annotate_uri(track: dict) -> str:
     """Build a Liquidsoap annotate URI embedding title and artist from the DB."""
+
     def esc(s: str) -> str:
         return (s or "").replace("\\", "\\\\").replace('"', '\\"')
+
     return f'annotate:title="{esc(track["title"])}",artist="{esc(track["artist"])}":{track["file_path"]}'
 
 
@@ -39,9 +40,7 @@ def track_started(track_id: str):
     """Called by Liquidsoap when a track begins playing. Logs to play_log."""
     with db() as conn:
         # Verify track exists
-        row = conn.execute(
-            "SELECT id FROM tracks WHERE id=?", (track_id,)
-        ).fetchone()
+        row = conn.execute("SELECT id FROM tracks WHERE id=?", (track_id,)).fetchone()
         if not row:
             logger.warning(f"track-started called with unknown track_id: {track_id}")
             return {"ok": False, "error": "unknown track"}
