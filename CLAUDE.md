@@ -7,7 +7,7 @@ Self-hosted internet radio station. Five Docker services: Icecast (stream), Liqu
 ## Key Design Decisions
 
 - **Single uvicorn worker + SQLite WAL**: deliberate. Do not add Celery, Redis, or Postgres unless the user explicitly asks. The project is designed for family-scale volume.
-- **Background worker thread** in `api/worker.py`: polls `jobs` table every 5s. Do not convert to async tasks — the librosa/ffmpeg work is CPU-bound and blocking.
+- **Background worker thread** in `api/worker.py`: polls `jobs` table every 5s. Do not convert to async tasks — the librosa/ffmpeg work is CPU-bound and blocking. On startup, `reset_stuck_jobs()` runs synchronously in the main thread (before the worker thread starts) to reset any jobs left in `processing` state by a previous crash or OOM kill.
 - **All scheduling logic in Python**: Liquidsoap only asks "what's next?" — it does not make programming decisions. Keep it this way.
 - **Single audio format**: all tracks are converted to MP3/128kbps by ffmpeg. Do not introduce format variations.
 - **DB is source of truth for track metadata**: `title` and `artist` live in the `tracks` table, not in MP3 tags. `/internal/next-track` returns a Liquidsoap annotate URI (`annotate:title="...",artist="...":file_path`) so Liquidsoap gets metadata from the API response and sets ICY StreamTitle correctly without reading any file tags. MP3 files also have `title` and `artist` ID3 tags written by ffmpeg during conversion as a recovery aid in case the DB is ever lost — they are not read at runtime.
@@ -101,6 +101,7 @@ The admin page also has a **YouTube Cookies** card that shows whether a cookies 
 - **`docker-compose.override.yml` is gitignored**: local dev only (disables certbot, uses HTTP-only nginx, exposes Icecast port 8000). Copy `docker-compose.override.yml.example` to use it locally. It is not present on the production server and will not be restored by `git pull`.
 - **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}` and `${STATION_NAME}` (for `auth_basic`). The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. Both vars must be set in docker-compose.yml for nginx.
 - **`file.filename` is a string, not a bool**: In `api/routers/submit.py`, `has_file = file is not None and file.filename` evaluates to the filename string when a file is provided. Always wrap in `bool()` before using in arithmetic (e.g. `sum()`), otherwise a `TypeError: unsupported operand type(s) for +: 'int' and 'str'` will be raised.
+- **API container needs at least 1g mem_limit**: librosa feature extraction is memory-intensive and will cause an OOM kill if the API container is constrained to 600m. The `mem_limit` in `docker-compose.yml` is set to `1g` — do not lower it. OOM kills leave jobs in `processing` state (handled by `reset_stuck_jobs()` on next startup, but the track has to be fully reprocessed).
 
 ## Secrets and Gitignored Files
 

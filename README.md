@@ -99,7 +99,7 @@ All public endpoints are proxied through nginx at `/api/`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/submit` | Submit a track (multipart form) |
+| `POST` | `/api/submit` | Submit a track (multipart form); optional `comment` field (max 280 chars) shown on the Now Playing page |
 | `GET` | `/api/status` | Now playing + recent 10 tracks + pending count + `station_name` |
 | `GET` | `/api/library` | All tracks with status |
 | `GET` | `/api/track/{id}` | Single track (for polling submission status) |
@@ -177,6 +177,7 @@ tail /var/log/radio-backup.log
 
 - **Database**: a safe point-in-time snapshot taken via Python's `sqlite3.Connection.backup()` (WAL-safe). Stored as timestamped files plus a `radio-latest.db` alias for quick restore.
 - **Media**: an incremental sync of processed MP3s. Files are never deleted from the backup destination, so accidentally removed tracks remain recoverable.
+- **Config**: `.env` and `nginx/.htpasswd` are uploaded on each run (`config/env-latest.env` and `config/htpasswd-latest`) so secrets can be recovered without rebuilding from scratch.
 
 ### Restore DB
 
