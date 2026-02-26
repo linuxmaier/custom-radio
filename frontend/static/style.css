@@ -78,7 +78,8 @@ label {
 input[type="text"],
 input[type="url"],
 input[type="file"],
-select {
+select,
+textarea {
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -86,10 +87,11 @@ select {
   padding: 0.6rem 0.9rem;
   color: var(--text);
   font-size: 0.95rem;
+  font-family: inherit;
   transition: border-color 0.15s;
 }
 
-input:focus, select:focus {
+input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
