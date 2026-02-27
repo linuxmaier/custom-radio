@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Submit a Song</title>
+  <link rel="manifest" href="/api/manifest.json" />
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" href="/static/favicon.png" />
   <link rel="stylesheet" href="/static/style.css" />
   <script defer src="/static/alpinejs-3.15.8.min.js"></script>
 </head>
@@ -94,7 +97,7 @@
 
         <div class="form-group">
           <label for="commentInput">Comment (optional — shown on the Now Playing page)</label>
-          <textarea id="commentInput" x-model="comment" maxlength="280"
+          <textarea id="commentInput" x-model="comment" maxlength="80"
                     placeholder="A note for the family…" rows="2"></textarea>
         </div>
 

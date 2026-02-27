@@ -7,6 +7,7 @@ from alerts import send_alert
 from audio import extract_features
 from database import db
 from downloader import convert_to_standard_mp3, download_youtube
+from push import send_push_to_all
 from scheduler import update_feature_bounds
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ def _process_job(job_id: int, track_id: str):
         # Get track details
         with db() as conn:
             row = conn.execute(
-                "SELECT source_type, source_url, submitter FROM tracks WHERE id=?",
+                "SELECT source_type, source_url, submitter, comment FROM tracks WHERE id=?",
                 (track_id,),
             ).fetchone()
 
@@ -48,6 +49,7 @@ def _process_job(job_id: int, track_id: str):
         source_type = row["source_type"]
         source_url = row["source_url"] or ""
         submitter = row["submitter"] or ""
+        comment = row["comment"] or ""
         raw_path = None
         title = None
         artist = None
@@ -140,6 +142,15 @@ def _process_job(job_id: int, track_id: str):
             )
 
         logger.info(f"Job {job_id} completed: track {track_id} ready at {final_path}")
+        if comment:
+            signoff = "\nTune in to hear its upcoming debut." if len(comment) <= 50 else ""
+            body = f'They said: "{comment}"{signoff}'
+        else:
+            body = "Tune in to hear its upcoming debut."
+        send_push_to_all(
+            title=f"{submitter} added {title} to the radio!",
+            body=body,
+        )
 
     except Exception as e:
         error_msg = str(e)

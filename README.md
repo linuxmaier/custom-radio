@@ -71,7 +71,8 @@ The override does three things: uses `nginx/local.conf.template` (HTTP on port 8
 | Page | URL | Purpose |
 |------|-----|---------|
 | Submit | `/` | Add a song (file upload or YouTube link) |
-| Now Playing | `/playing.html` | See what's on and recent history |
+| Now Playing | `/playing.html` | See what's on, recent history, and manage push notifications |
+| Library | `/library.html` | All songs grouped by submitter with play counts |
 | Admin | `/admin.html` | Change mode, skip track, manage library |
 
 All pages are behind HTTP Basic Auth (shared family username/password from `.env`). The admin page additionally requires an admin token sent via the `X-Admin-Token` header.
@@ -99,10 +100,16 @@ All public endpoints are proxied through nginx at `/api/`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/submit` | Submit a track (multipart form); optional `comment` field (max 280 chars) shown on the Now Playing page |
+| `POST` | `/api/submit` | Submit a track (multipart form); optional `comment` field (max 80 chars) shown on the Now Playing page and in push notifications |
 | `GET` | `/api/status` | Now playing + recent 10 tracks + pending count + `station_name` |
-| `GET` | `/api/library` | All tracks with status |
+| `GET` | `/api/public-library` | Ready tracks with play counts, grouped by submitter |
+| `GET` | `/api/library` | All tracks with status (admin use) |
 | `GET` | `/api/track/{id}` | Single track (for polling submission status) |
+| `GET` | `/api/check-duplicate` | Fuzzy duplicate check by `title`, `artist`, and/or `video_id` |
+| `GET` | `/api/manifest.json` | PWA Web App Manifest (station name from `STATION_NAME` env var) |
+| `GET` | `/api/push/vapid-key` | VAPID public key for push subscription |
+| `POST` | `/api/push/subscribe` | Register a push subscription |
+| `POST` | `/api/push/unsubscribe` | Remove a push subscription |
 | `GET` | `/api/admin/config` | Get current config (admin token required) |
 | `POST` | `/api/admin/config` | Update programming mode / block size |
 | `POST` | `/api/admin/skip` | Skip the current track |
@@ -135,6 +142,9 @@ See `.env.example` for the full list:
 | `SMTP_PASS` | SMTP password |
 | `ALERT_FROM` | From address for alert emails |
 | `ALERT_TO` | Recipient address for alert emails |
+| `VAPID_PRIVATE_KEY` | VAPID private key (base64url) for Web Push notifications; leave unset to disable push |
+| `VAPID_PUBLIC_KEY` | VAPID public key (base64url) served to browsers for push subscription |
+| `VAPID_CLAIMS_EMAIL` | Contact email included in VAPID JWT claims (e.g. `admin@yourfamily.com`) |
 
 ## Backups
 
@@ -230,6 +240,47 @@ For AWS SES, `ALERT_FROM` must use a domain or address verified in your SES acco
 
 The alert email includes the submitter name, the YouTube URL that failed, and a direct link to the admin panel to upload fresh cookies.
 
+## Push Notifications
+
+Family members can opt in to browser push notifications and be notified whenever someone adds a new song. The notification fires when the track finishes processing and is ready to play.
+
+Push notifications are opt-in — nothing is sent and no UI is shown unless the VAPID keys are configured. Unlike the other secrets in `.env`, VAPID keys must be a valid cryptographic key pair; you can't just type a random string.
+
+### Generating keys
+
+Run this once per station (requires Python and the `cryptography` package, which is installed as part of `pywebpush` in the API image):
+
+```bash
+python3 -c "
+from cryptography.hazmat.primitives.asymmetric.ec import generate_private_key, SECP256R1
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+import base64
+k = generate_private_key(SECP256R1())
+priv = base64.urlsafe_b64encode(k.private_numbers().private_value.to_bytes(32,'big')).decode()
+pub = base64.urlsafe_b64encode(k.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)).decode()
+print(f'VAPID_PRIVATE_KEY={priv}')
+print(f'VAPID_PUBLIC_KEY={pub}')
+"
+```
+
+### Configuration
+
+Add the output to `.env`, plus a contact email:
+
+```bash
+VAPID_PRIVATE_KEY=<generated above>
+VAPID_PUBLIC_KEY=<generated above>
+VAPID_CLAIMS_EMAIL=admin@yourfamily.com
+```
+
+### How it works
+
+- Family members visit the **Now Playing** page and click **Turn on notifications**
+- The browser prompts for notification permission; once granted, the subscription is stored in the database
+- When a track finishes processing, a push notification is sent to all subscribers: _"[Submitter] added [Title] to the radio!"_
+- Clicking the notification opens the Now Playing page
+- Subscriptions that have expired are removed automatically on the next send
+
 ## Project Structure
 
 ```
@@ -256,17 +307,28 @@ family-radio/
 │   ├── scheduler.py
 │   ├── audio.py
 │   ├── downloader.py
+│   ├── push.py             # Web Push: send_push_to_all(); no-op if VAPID unset
 │   └── routers/
 │       ├── submit.py
 │       ├── internal.py
 │       ├── admin.py
-│       └── status.py
+│       ├── status.py
+│       └── push.py         # /manifest.json, /push/vapid-key, /push/subscribe, /push/unsubscribe
 ├── frontend/
 │   ├── index.html
-│   ├── playing.html
+│   ├── playing.html        # includes push notification subscribe/unsubscribe UI
+│   ├── library.html        # tracks grouped by submitter with play counts
 │   ├── admin.html
+│   ├── sw.js               # service worker: push events, notificationclick
 │   └── static/
-│       └── style.css
+│       ├── style.css
+│       ├── push.js         # browser-side push helpers (window.pushHelpers)
+│       ├── icon-192.png    # PWA home screen icon (192×192)
+│       ├── icon-512.png    # PWA splash screen icon (512×512)
+│       ├── icon-512-maskable.png  # Android adaptive icon; content in centre 60% safe zone
+│       ├── apple-touch-icon.png   # iOS Add to Home Screen icon (180×180)
+│       ├── favicon.png     # browser tab icon (32×32)
+│       └── badge-96.png    # notification badge icon (96×96, transparent bg)
 └── scripts/
     └── backup.sh               # daily backup script (DB + media; see Backups section)
 ```

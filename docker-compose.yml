@@ -55,6 +55,9 @@ services:
       - SMTP_PASS=${SMTP_PASS}
       - ALERT_FROM=${ALERT_FROM}
       - ALERT_TO=${ALERT_TO}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
+      - VAPID_CLAIMS_EMAIL=${VAPID_CLAIMS_EMAIL}
     expose:
       - "8000"
 

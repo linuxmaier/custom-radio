@@ -7,10 +7,8 @@ cookies/
 # Copy docker-compose.override.yml.example to docker-compose.override.yml for local dev.
 docker-compose.override.yml
 
-# Local management info (instance IDs, access details — not for the repo)
-MANAGEMENT.md
-AUDIT_PROMPT.md
-future_inf_considerations.txt
+# Local management info (instance IDs, access details, session notes — not for the repo)
+local_management/
 
 # Local Claude helper scripts (machine-specific, not for the repo)
 .claude_scripts/

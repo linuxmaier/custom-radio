@@ -32,10 +32,11 @@ The `bgutil-provider` service uses the upstream `brainicism/bgutil-ytdlp-pot-pro
 ## API Layout
 
 Routers in `api/routers/`:
-- `submit.py`   — POST /submit
+- `submit.py`   — POST /submit, GET /check-duplicate, GET /submitters
 - `internal.py` — GET /internal/next-track (returns annotate URI with title/artist from DB), POST /internal/track-started/{id}
 - `admin.py`    — GET/POST /admin/config, POST /admin/skip, DELETE /admin/track/{id}, GET /admin/youtube-cookies/status, POST /admin/youtube-cookies
-- `status.py`   — GET /status (returns now_playing, recent, pending_count, station_name), GET /library, GET /track/{id}
+- `status.py`   — GET /status (returns now_playing, recent, pending_count, station_name), GET /library, GET /public-library, GET /track/{id}
+- `push.py`     — GET /manifest.json (dynamic PWA manifest), GET /push/vapid-key, POST /push/subscribe, POST /push/unsubscribe
 
 All public routes go through nginx at `/api/`. Internal routes are Docker-network-only (blocked by nginx).
 
@@ -45,7 +46,7 @@ Admin endpoints are authenticated via the `X-Admin-Token` request header (value 
 
 ## Database
 
-SQLite at `/data/radio.db` (Docker volume). Schema initialised in `database.py:init_db()`. Tables: `tracks`, `play_log`, `jobs`, `config`.
+SQLite at `/data/radio.db` (Docker volume). Schema initialised in `database.py:init_db()`. Tables: `tracks`, `play_log`, `jobs`, `config`, `push_subscriptions`.
 
 Config keys: `programming_mode`, `rotation_tracks_per_block`, `rotation_current_submitter_idx`, `rotation_block_start_log_id`, `last_returned_track_id`, `feature_min/max_*` (4 audio features).
 
@@ -104,6 +105,8 @@ The admin page also has a **YouTube Cookies** card that shows whether a cookies 
 - **YouTube cookie quality — multiple stations**: Each station uses a separate throwaway Google account and a separate cookie file. **Use separate browser profiles** (e.g. Chrome profile A for station A, profile B for station B) when generating cookies — do not sign both accounts into the same browser simultaneously. Shared browser fingerprinting cookies in a multi-account session can shorten cookie lifespan and trigger YouTube's bot detection faster. To export cookies, use the "Get cookies.txt LOCALLY" Chrome/Firefox extension (Netscape format) from within the correct profile, then upload via the admin panel.
 - **`docker-compose.override.yml` is gitignored**: local dev only (disables certbot, uses HTTP-only nginx, exposes Icecast port 8000). Copy `docker-compose.override.yml.example` to use it locally. It is not present on the production server and will not be restored by `git pull`.
 - **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}` and `${STATION_NAME}` (for `auth_basic`). The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. Both vars must be set in docker-compose.yml for nginx.
+- **nginx `auth_basic off` for PWA assets is intentional**: `/sw.js`, `/api/manifest.json`, and icon PNGs are deliberately exempted from HTTP Basic Auth in both `default.conf.template` and `local.conf.template`. Browsers and mobile OSes fetch these at the system level (not through a user session) when installing a PWA or displaying notifications — they do not carry stored Basic Auth credentials. Do not remove these exemptions. The exposed content is non-sensitive (a service worker, a manifest with the station name, and static images).
+
 - **`file.filename` is a string, not a bool**: In `api/routers/submit.py`, `has_file = file is not None and file.filename` evaluates to the filename string when a file is provided. Always wrap in `bool()` before using in arithmetic (e.g. `sum()`), otherwise a `TypeError: unsupported operand type(s) for +: 'int' and 'str'` will be raised.
 - **API container needs at least 1g mem_limit**: librosa feature extraction is memory-intensive and will cause an OOM kill if the API container is constrained to 600m. The `mem_limit` in `docker-compose.yml` is set to `1g` — do not lower it. OOM kills leave jobs in `processing` state (handled by `reset_stuck_jobs()` on next startup, but the track has to be fully reprocessed).
 
@@ -140,6 +143,6 @@ PR descriptions must include:
 - **nginx config templates**: two templates exist — `nginx/default.conf.template` (production, HTTPS + certbot) and `nginx/local.conf.template` (local, HTTP only). The override file maps the local one into the nginx container.
 - To test the API locally without Docker: `cd api && uvicorn main:app --reload`
   Set env vars: `ADMIN_TOKEN=dev DB_PATH=./radio.db MEDIA_DIR=./media`
-- To rebuild after Python changes: `docker compose up -d --build api && docker compose restart nginx` — nginx caches the api container's IP at startup, so it must be restarted whenever the api container is recreated (otherwise nginx serves 502s until restarted)
+- **After any Python file change, always use `--build`**: `docker compose up -d --build api && docker compose restart nginx`. Without `--build`, Docker restarts the container using the old image — the code change is silently ignored and the old behaviour persists. nginx must also be restarted because it caches the api container's IP at startup (otherwise it serves 502s).
 - To tail API logs: `docker compose logs -f api`
 - Liquidsoap reconnects to Icecast automatically on failure; no manual intervention needed.
