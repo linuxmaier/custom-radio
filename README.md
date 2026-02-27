@@ -329,7 +329,6 @@ family-radio/
 │       ├── apple-touch-icon.png   # iOS Add to Home Screen icon (180×180)
 │       ├── favicon.png     # browser tab icon (32×32)
 │       └── badge-96.png    # notification badge icon (96×96, transparent bg)
-├── ICON_PROMPTS.md             # Gemini prompts for regenerating PWA icons if needed
 └── scripts/
     └── backup.sh               # daily backup script (DB + media; see Backups section)
 ```
