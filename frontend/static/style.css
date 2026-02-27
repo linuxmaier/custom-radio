@@ -262,6 +262,64 @@ button.btn.secondary:hover { background: #3a3d4a; }
   padding: 3rem 1rem;
 }
 
+.mini-player {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1rem;
+  z-index: 99;
+}
+
+.mini-track {
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.mini-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.mini-btn:hover { background: var(--accent-hover); }
+
+body.has-mini-player { padding-bottom: 56px; }
+
 @media (max-width: 480px) {
   .container { padding: 1rem; }
   h1 { font-size: 1.4rem; }
@@ -308,5 +366,14 @@ button.btn.secondary:hover { background: #3a3d4a; }
   /* Pad body so content isn't hidden behind the tab bar */
   body {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Mini-player sits above the tab bar */
+  .mini-player {
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+
+  body.has-mini-player {
+    padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   }
 }
