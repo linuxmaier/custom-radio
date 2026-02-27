@@ -115,6 +115,7 @@
         playing: false,
         loading: false,
         everPlayed: false,
+        userPaused: false,
         volume: 1,
         isIos: /iphone|ipad|ipod/i.test(navigator.userAgent),
         streamUrl: `${location.protocol}//${location.hostname}/stream`,
@@ -146,13 +147,27 @@
           audio.addEventListener('pause', () => {
             this.playing = false;
             this.loading = false;
-            sessionStorage.setItem('radioState', JSON.stringify({ active: true, paused: true }));
+            if (this.userPaused) {
+              sessionStorage.setItem('radioState', JSON.stringify({ active: true, paused: true }));
+            }
+            this.userPaused = false;
           });
 
           audio.addEventListener('error', () => {
             this.playing = false;
             this.loading = false;
           });
+
+          // Restore play state when navigating back from another page
+          const saved = JSON.parse(sessionStorage.getItem('radioState') || 'null');
+          if (saved && saved.active) {
+            this.everPlayed = true;
+            if (!saved.paused) {
+              this.loading = true;
+              audio.src = `${this.streamUrl}?t=${Date.now()}`;
+              audio.play().catch(() => { this.loading = false; });
+            }
+          }
 
           await this.refresh();
           setInterval(() => this.refresh(), 15000);
@@ -169,6 +184,7 @@
         togglePlay() {
           const audio = this.$refs.audio;
           if (this.playing) {
+            this.userPaused = true;
             audio.pause();
           } else {
             this.loading = true;

@@ -37,4 +37,105 @@
       document.title = fetched + ' \u2014 ' + document.title;
     })
     .catch(function () {});
+
+  // Persistent mini-player (shown on all pages except Now Playing)
+  if (path !== '/playing.html') {
+    var state = null;
+    try { state = JSON.parse(sessionStorage.getItem('radioState')); } catch (e) {}
+
+    if (state && state.active) {
+      document.addEventListener('DOMContentLoaded', function () {
+        var streamUrl = location.protocol + '//' + location.hostname + '/stream';
+
+        document.body.insertAdjacentHTML('beforeend',
+          '<div id="mini-player" class="mini-player">' +
+            '<audio id="mini-audio" preload="auto"></audio>' +
+            '<a href="/playing.html" class="mini-track">' +
+              '<div class="mini-title" id="mini-title">Loading\u2026</div>' +
+              '<div class="mini-sub" id="mini-sub"></div>' +
+            '</a>' +
+            '<button id="mini-btn" class="mini-btn" aria-label="Play/Pause">' +
+              '<span id="mini-spinner" class="spinner" style="display:none;"></span>' +
+              '<span id="mini-icon">\u25b6</span>' +
+            '</button>' +
+          '</div>'
+        );
+        document.body.classList.add('has-mini-player');
+
+        var miniAudio = document.getElementById('mini-audio');
+        var miniBtn = document.getElementById('mini-btn');
+        var miniIcon = document.getElementById('mini-icon');
+        var miniSpinner = document.getElementById('mini-spinner');
+        var miniTitle = document.getElementById('mini-title');
+        var miniSub = document.getElementById('mini-sub');
+        var miniPlaying = false;
+        var miniUserPaused = false;
+
+        function setMiniState(playing, loading) {
+          miniPlaying = playing;
+          miniSpinner.style.display = loading ? 'inline-block' : 'none';
+          miniIcon.style.display = loading ? 'none' : 'inline';
+          miniIcon.textContent = playing ? '\u23f8' : '\u25b6';
+        }
+
+        miniAudio.src = streamUrl;
+
+        miniAudio.addEventListener('playing', function () {
+          setMiniState(true, false);
+          sessionStorage.setItem('radioState', JSON.stringify({ active: true, paused: false }));
+        });
+        miniAudio.addEventListener('waiting', function () {
+          miniSpinner.style.display = 'inline-block';
+          miniIcon.style.display = 'none';
+        });
+        miniAudio.addEventListener('pause', function () {
+          setMiniState(false, false);
+          if (miniUserPaused) {
+            sessionStorage.setItem('radioState', JSON.stringify({ active: true, paused: true }));
+          }
+          miniUserPaused = false;
+        });
+        miniAudio.addEventListener('error', function () {
+          setMiniState(false, false);
+        });
+
+        miniBtn.addEventListener('click', function () {
+          if (miniPlaying) {
+            miniUserPaused = true;
+            miniAudio.pause();
+          } else {
+            setMiniState(false, true);
+            miniAudio.src = streamUrl + '?t=' + Date.now();
+            miniAudio.play().catch(function () { setMiniState(false, false); });
+          }
+        });
+
+        // Auto-resume if stream was active and not paused
+        if (!state.paused) {
+          setMiniState(false, true);
+          miniAudio.play().catch(function () { setMiniState(false, false); });
+        }
+
+        // Fetch and poll track info
+        function fetchMiniStatus() {
+          fetch('/api/status')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              var np = data.now_playing;
+              if (np) {
+                miniTitle.textContent = np.title;
+                miniSub.textContent = np.artist;
+              } else {
+                miniTitle.textContent = 'Starting up\u2026';
+                miniSub.textContent = '';
+              }
+            })
+            .catch(function () {});
+        }
+
+        fetchMiniStatus();
+        setInterval(fetchMiniStatus, 15000);
+      });
+    }
+  }
 }());

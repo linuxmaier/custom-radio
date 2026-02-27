@@ -89,6 +89,17 @@ The web player in `frontend/playing.html` embeds an `<audio>` element pointed at
 - **The `pause` event fires for buffering stalls too**: browsers fire `pause` when buffering stalls as well as on user-initiated pauses. This means sessionStorage may briefly show `paused: true` during a stall before `play` fires again — this is harmless.
 - **Player state in sessionStorage**: `radioState` key holds `{ active: boolean, paused: boolean }`. Written by `playing.html` on play/pause events; read by the nav mini-player to decide whether to auto-resume on page navigation.
 
+## Frontend Mini-Player Notes
+
+The mini-player is injected by `nav.js` into all pages except `/playing.html`. It reads `sessionStorage.radioState` on load and only appears if `active: true`. Auto-resume behavior differs by context:
+
+- **Installed PWA (standalone mode)**: `play()` succeeds on page navigation — Chrome Android grants autoplay to installed apps. The mini-player auto-resumes seamlessly.
+- **Desktop browsers (Firefox, Chrome, etc.)**: browsers block unmuted autoplay on new page loads even within the same origin. `play()` is called but rejected; the `catch` resets to a paused ▶ state. The user must click the play button once to resume. This is expected and accepted behaviour.
+
+The `userPaused` flag (in both `playing.html` and the nav.js mini-player) gates the `paused: true` sessionStorage write so that browser-triggered `pause` events during page unload do not mark the session as paused. Without this, desktop browsers that DO fire `pause` on navigation (Chrome desktop) would overwrite sessionStorage and the mini-player would never attempt auto-resume.
+
+On Firefox, bfcache behaviour means `pause` may not fire at all during navigation, so the flag is a no-op there — but it is still correct.
+
 ## Frontend Admin Notes
 
 The admin library list (`frontend/admin.html`) is loaded once on login and does not auto-refresh (by design — the page is not intended to be a live dashboard). The one exception: while any track has `status='pending'`, a 5-second polling interval runs via `managePoll()` and refreshes the library until all tracks settle. `managePoll()` is called after every `loadLibrary()` and self-manages the interval (starts it when pending tracks exist, clears it when they're gone).
