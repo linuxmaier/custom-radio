@@ -21,17 +21,12 @@
     <div class="card" style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
       <audio x-ref="audio" preload="none"></audio>
 
-      <button class="btn" style="font-size:1.1rem; min-width:7rem;" @click="togglePlay()">
-        <span x-text="playing ? '⏸ Pause' : '▶ Play'"></span>
+      <button class="btn" style="font-size:1.1rem; min-width:10rem;" @click="togglePlay()">
+        <span x-text="playing ? '⏸ Pause' : (everPlayed ? '▶ Resume from Live' : '▶ Play')"></span>
       </button>
 
-      <span x-show="playing && totalBehindMs === 0" class="live-indicator" x-cloak>
+      <span x-show="playing" class="live-indicator" x-cloak>
         <span class="live-dot"></span> LIVE
-      </span>
-
-      <span x-show="everPlayed && (totalBehindMs > 0 || pausedAt !== null)" style="display:inline-flex; align-items:center; gap:0.6rem; color:var(--muted); font-size:0.875rem;" x-cloak>
-        <span x-show="pausedSeconds > 0">~<span x-text="pausedSeconds"></span>s behind live</span>
-        <button class="btn secondary" style="padding:0.3rem 0.8rem; font-size:0.8rem;" @click="backToLive()">↩ Back to Live</button>
       </span>
 
       <div x-show="!isIos" style="display:flex; align-items:center; gap:0.4rem; margin-left:auto;">
@@ -118,13 +113,8 @@
         loaded: false,
         playing: false,
         everPlayed: false,
-        userPaused: false,
         volume: 1,
         isIos: /iphone|ipad|ipod/i.test(navigator.userAgent),
-        pausedSeconds: 0,
-        pausedTimer: null,
-        pausedAt: null,
-        totalBehindMs: 0,
         streamUrl: `${location.protocol}//${location.hostname}/stream`,
         pushSupported: false,
         pushNeedsInstall: false,
@@ -139,30 +129,12 @@
           audio.addEventListener('play', () => {
             this.playing = true;
             this.everPlayed = true;
-            if (this.userPaused && this.pausedAt !== null) {
-              this.totalBehindMs += Date.now() - this.pausedAt;
-              this.pausedAt = null;
-            }
-            this.userPaused = false;
-            if (this.pausedTimer) {
-              clearInterval(this.pausedTimer);
-              this.pausedTimer = null;
-            }
-            this.pausedSeconds = Math.floor(this.totalBehindMs / 1000);
+            sessionStorage.setItem('radioState', JSON.stringify({ active: true, paused: false }));
           });
 
           audio.addEventListener('pause', () => {
             this.playing = false;
-            // Ignore buffering stalls — only track user-initiated pauses.
-            if (!this.userPaused) return;
-            if (this.pausedTimer) {
-              clearInterval(this.pausedTimer);
-              this.pausedTimer = null;
-            }
-            this.pausedAt = Date.now();
-            this.pausedTimer = setInterval(() => {
-              this.pausedSeconds = Math.floor((this.totalBehindMs + Date.now() - this.pausedAt) / 1000);
-            }, 1000);
+            sessionStorage.setItem('radioState', JSON.stringify({ active: true, paused: true }));
           });
 
           audio.addEventListener('error', () => {
@@ -184,27 +156,11 @@
         togglePlay() {
           const audio = this.$refs.audio;
           if (this.playing) {
-            this.userPaused = true;
             audio.pause();
           } else {
-            if (!this.everPlayed) {
-              audio.src = `${this.streamUrl}?t=${Date.now()}`;
-            }
+            audio.src = `${this.streamUrl}?t=${Date.now()}`;
             audio.play().catch(() => {});
           }
-        },
-
-        backToLive() {
-          const audio = this.$refs.audio;
-          if (this.pausedTimer) {
-            clearInterval(this.pausedTimer);
-            this.pausedTimer = null;
-          }
-          this.pausedSeconds = 0;
-          this.totalBehindMs = 0;
-          this.pausedAt = null;
-          audio.src = `${this.streamUrl}?t=${Date.now()}`;
-          audio.play().catch(() => {});
         },
 
         setVolume() {
