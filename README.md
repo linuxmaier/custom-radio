@@ -142,7 +142,6 @@ See `.env.example` for the full list:
 | `SMTP_PASS` | SMTP password |
 | `ALERT_FROM` | From address for alert emails |
 | `ALERT_TO` | Recipient address for alert emails |
-| `PUBLIC_STREAM_TOKEN` | Optional 3-word passphrase (e.g. `apple-river-stone`) that creates a no-auth stream URL for smart speakers and smart TVs; leave unset to disable |
 | `VAPID_PRIVATE_KEY` | VAPID private key (base64url) for Web Push notifications; leave unset to disable push |
 | `VAPID_PUBLIC_KEY` | VAPID public key (base64url) served to browsers for push subscription |
 | `VAPID_CLAIMS_EMAIL` | Contact email included in VAPID JWT claims (e.g. `admin@yourfamily.com`) |
