@@ -34,7 +34,7 @@
         <button class="btn secondary" style="padding:0.3rem 0.8rem; font-size:0.8rem;" @click="backToLive()">↩ Back to Live</button>
       </span>
 
-      <div style="display:flex; align-items:center; gap:0.4rem; margin-left:auto;">
+      <div x-show="!isIos" style="display:flex; align-items:center; gap:0.4rem; margin-left:auto;">
         <span style="opacity:0.5; font-size:0.9rem; line-height:1;">🔈</span>
         <input type="range" min="0" max="1" step="0.05" x-model="volume" @input="setVolume()" style="width:80px; cursor:pointer;" />
         <span style="opacity:0.5; font-size:0.9rem; line-height:1;">🔊</span>
@@ -120,6 +120,7 @@
         everPlayed: false,
         userPaused: false,
         volume: 1,
+        isIos: /iphone|ipad|ipod/i.test(navigator.userAgent),
         pausedSeconds: 0,
         pausedTimer: null,
         pausedAt: null,
