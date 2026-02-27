@@ -40,6 +40,11 @@
               class="btn secondary" style="margin-left:auto; font-size:0.875rem;">
         AirPlay
       </button>
+
+      <button x-show="castAvailable" @click="cast()" x-cloak
+              class="btn secondary" style="margin-left:auto; font-size:0.875rem;">
+        Cast
+      </button>
     </div>
 
     <!-- Now Playing Info -->
@@ -124,6 +129,7 @@
         volume: 1,
         isIos: /iphone|ipad|ipod/i.test(navigator.userAgent),
         airplayAvailable: false,
+        castAvailable: false,
         streamUrl: `${location.protocol}//${location.hostname}/stream`,
         pushSupported: false,
         pushNeedsInstall: false,
@@ -180,6 +186,13 @@
           // AirPlay (iOS Safari only)
           this.airplayAvailable = typeof audio.webkitShowPlaybackTargetPicker === 'function';
 
+          // Remote Playback API — Cast to Chromecast / other devices (Chrome)
+          if ('remote' in audio) {
+            audio.remote.watchAvailability((available) => {
+              this.castAvailable = available;
+            }).catch(() => {});
+          }
+
           // Media Session API (Android lock screen / notification controls)
           if ('mediaSession' in navigator) {
             navigator.mediaSession.setActionHandler('play', () => { if (!this.playing) this.togglePlay(); });
@@ -220,6 +233,10 @@
 
         airPlay() {
           this.$refs.audio.webkitShowPlaybackTargetPicker();
+        },
+
+        cast() {
+          this.$refs.audio.remote.prompt().catch(() => {});
         },
 
         async refresh() {
