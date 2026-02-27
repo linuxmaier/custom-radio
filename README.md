@@ -77,6 +77,14 @@ The override does three things: uses `nginx/local.conf.template` (HTTP on port 8
 
 All pages are behind HTTP Basic Auth (shared family username/password from `.env`). The admin page additionally requires an admin token sent via the `X-Admin-Token` header.
 
+### Mini-player
+
+A persistent mini-player bar appears at the bottom of every page (except Now Playing) once you've started the stream. It shows the current track and lets you play/pause without navigating back.
+
+**Auto-resume behaviour differs by context:**
+- **Installed PWA** (Add to Home Screen on iOS/Android): the stream resumes automatically when you navigate between pages.
+- **Desktop and mobile browsers** (non-installed): browsers block unmuted autoplay across page navigations, so the mini-player appears with a ▶ button. Tap or click it once to resume.
+
 ## Programming Modes
 
 Switchable live from the admin page — no restart needed.
