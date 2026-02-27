@@ -323,9 +323,13 @@ family-radio/
 │   └── static/
 │       ├── style.css
 │       ├── push.js         # browser-side push helpers (window.pushHelpers)
-│       ├── icon-192.png    # PWA home screen icon (placeholder — see issue #44)
-│       ├── icon-512.png    # PWA splash/maskable icon (placeholder)
-│       └── badge-96.png    # notification badge icon (placeholder)
+│       ├── icon-192.png    # PWA home screen icon (192×192)
+│       ├── icon-512.png    # PWA splash screen icon (512×512)
+│       ├── icon-512-maskable.png  # Android adaptive icon; content in centre 60% safe zone
+│       ├── apple-touch-icon.png   # iOS Add to Home Screen icon (180×180)
+│       ├── favicon.png     # browser tab icon (32×32)
+│       └── badge-96.png    # notification badge icon (96×96, transparent bg)
+├── ICON_PROMPTS.md             # Gemini prompts for regenerating PWA icons if needed
 └── scripts/
     └── backup.sh               # daily backup script (DB + media; see Backups section)
 ```
