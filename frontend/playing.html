@@ -253,7 +253,12 @@
             audio.remote.prompt().catch(() => {});
             return;
           }
+          // publicStreamUrl may not be set yet if the user clicks Cast before the
+          // first status fetch completes (watchAvailability fires faster than /api/status).
+          if (!this.publicStreamUrl) await this.refresh();
+
           if (!this.publicStreamUrl) {
+            // Token stream not configured — cast directly; will likely 401
             audio.remote.prompt().catch(() => {});
             return;
           }
