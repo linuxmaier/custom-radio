@@ -150,6 +150,11 @@ button.btn.secondary {
 }
 button.btn.secondary:hover { background: #3a3d4a; }
 
+button.btn.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+}
+
 .alert {
   padding: 0.75rem 1rem;
   border-radius: var(--radius);
@@ -367,6 +372,9 @@ body.has-mini-player { padding-bottom: 56px; }
   body {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
+
+  /* Ensure small buttons still meet minimum touch target height */
+  button.btn.btn-sm { min-height: 44px; }
 
   /* Mini-player sits above the tab bar */
   .mini-player {
