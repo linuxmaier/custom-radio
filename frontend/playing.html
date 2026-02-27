@@ -19,10 +19,11 @@
 
     <!-- Player -->
     <div class="card" style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
-      <audio x-ref="audio" preload="none"></audio>
+      <audio x-ref="audio" preload="auto"></audio>
 
-      <button class="btn" style="font-size:1.1rem; min-width:10rem;" @click="togglePlay()">
-        <span x-text="playing ? '⏸ Pause' : (everPlayed ? '▶ Resume from Live' : '▶ Play')"></span>
+      <button class="btn" style="font-size:1.1rem; min-width:10rem;" @click="togglePlay()" :disabled="loading">
+        <span x-show="loading" class="spinner"></span>
+        <span x-text="loading ? 'Connecting…' : (playing ? '⏸ Pause' : (everPlayed ? '▶ Resume from Live' : '▶ Play'))"></span>
       </button>
 
       <span x-show="playing" class="live-indicator" x-cloak>
@@ -112,6 +113,7 @@
         pendingCount: 0,
         loaded: false,
         playing: false,
+        loading: false,
         everPlayed: false,
         volume: 1,
         isIos: /iphone|ipad|ipod/i.test(navigator.userAgent),
@@ -125,20 +127,31 @@
         async init() {
           const audio = this.$refs.audio;
           audio.volume = this.volume;
+          audio.src = this.streamUrl;
 
           audio.addEventListener('play', () => {
-            this.playing = true;
             this.everPlayed = true;
             sessionStorage.setItem('radioState', JSON.stringify({ active: true, paused: false }));
           });
 
+          audio.addEventListener('playing', () => {
+            this.playing = true;
+            this.loading = false;
+          });
+
+          audio.addEventListener('waiting', () => {
+            this.loading = true;
+          });
+
           audio.addEventListener('pause', () => {
             this.playing = false;
+            this.loading = false;
             sessionStorage.setItem('radioState', JSON.stringify({ active: true, paused: true }));
           });
 
           audio.addEventListener('error', () => {
             this.playing = false;
+            this.loading = false;
           });
 
           await this.refresh();
@@ -158,8 +171,12 @@
           if (this.playing) {
             audio.pause();
           } else {
-            audio.src = `${this.streamUrl}?t=${Date.now()}`;
-            audio.play().catch(() => {});
+            this.loading = true;
+            if (this.everPlayed) {
+              // Resume: reconnect to get current live point, discarding buffered audio
+              audio.src = `${this.streamUrl}?t=${Date.now()}`;
+            }
+            audio.play().catch(() => { this.loading = false; });
           }
         },
 
