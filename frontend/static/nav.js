@@ -1,14 +1,17 @@
 (function () {
   var path = location.pathname;
   var links = [
-    { href: '/', label: 'Submit' },
-    { href: '/playing.html', label: 'Now Playing' },
-    { href: '/library.html', label: 'Library' },
-    { href: '/admin.html', label: 'Admin' },
+    { href: '/', label: 'Submit', icon: '+' },
+    { href: '/playing.html', label: 'Now Playing', icon: '♪' },
+    { href: '/library.html', label: 'Library', icon: '≡' },
+    { href: '/admin.html', label: 'Admin', icon: '⚙' },
   ];
   var items = links.map(function (l) {
     var active = l.href === '/' ? path === '/' : path === l.href;
-    return '<a href="' + l.href + '"' + (active ? ' class="active"' : '') + '>' + l.label + '</a>';
+    return '<a href="' + l.href + '"' + (active ? ' class="active"' : '') + '>' +
+      '<span class="nav-icon">' + l.icon + '</span>' +
+      '<span class="nav-label">' + l.label + '</span>' +
+      '</a>';
   }).join('');
 
   var name = localStorage.getItem('station_name') || 'Radio';
