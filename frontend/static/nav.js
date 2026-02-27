@@ -83,6 +83,22 @@
         miniAudio.addEventListener('playing', function () {
           setMiniState(true, false);
           sessionStorage.setItem('radioState', JSON.stringify({ active: true, paused: false }));
+          if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'playing';
+            navigator.mediaSession.setActionHandler('play', function () {
+              if (!miniPlaying) {
+                setMiniState(false, true);
+                miniAudio.src = streamUrl + '?t=' + Date.now();
+                miniAudio.play().catch(function () { setMiniState(false, false); });
+              }
+            });
+            navigator.mediaSession.setActionHandler('pause', function () {
+              if (miniPlaying) { miniUserPaused = true; miniAudio.pause(); }
+            });
+            navigator.mediaSession.setActionHandler('stop', function () {
+              if (miniPlaying) { miniUserPaused = true; miniAudio.pause(); }
+            });
+          }
         });
         miniAudio.addEventListener('waiting', function () {
           miniSpinner.style.display = 'inline-block';
@@ -94,6 +110,7 @@
             sessionStorage.setItem('radioState', JSON.stringify({ active: true, paused: true }));
           }
           miniUserPaused = false;
+          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
         });
         miniAudio.addEventListener('error', function () {
           setMiniState(false, false);
@@ -125,6 +142,16 @@
               if (np) {
                 miniTitle.textContent = np.title;
                 miniSub.textContent = np.artist;
+                if ('mediaSession' in navigator) {
+                  navigator.mediaSession.metadata = new MediaMetadata({
+                    title: np.title,
+                    artist: np.artist,
+                    artwork: [
+                      { src: location.origin + '/static/icon-192.png', sizes: '192x192', type: 'image/png' },
+                      { src: location.origin + '/static/icon-512.png', sizes: '512x512', type: 'image/png' },
+                    ],
+                  });
+                }
               } else {
                 miniTitle.textContent = 'Starting up\u2026';
                 miniSub.textContent = '';
