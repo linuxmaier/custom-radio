@@ -134,6 +134,7 @@
         isIos: /iphone|ipad|ipod/i.test(navigator.userAgent),
         airplayAvailable: false,
         castAvailable: false,
+        casting: false,
         streamUrl: `${location.protocol}//${location.hostname}/stream`,
         publicStreamUrl: '',
         pushSupported: false,
@@ -196,13 +197,16 @@
             audio.remote.watchAvailability((available) => {
               this.castAvailable = available;
             }).catch(() => {});
+            audio.remote.addEventListener('disconnect', () => {
+              this.casting = false;
+            });
           }
 
           // Media Session API (Android lock screen / notification controls)
           if ('mediaSession' in navigator) {
-            navigator.mediaSession.setActionHandler('play', () => { if (!this.playing) this.togglePlay(); });
-            navigator.mediaSession.setActionHandler('pause', () => { if (this.playing) this.togglePlay(); });
-            navigator.mediaSession.setActionHandler('stop', () => { if (this.playing) this.togglePlay(); });
+            navigator.mediaSession.setActionHandler('play', () => { if (!this.playing && !this.casting) this.togglePlay(); });
+            navigator.mediaSession.setActionHandler('pause', () => { if (this.playing && !this.casting) this.togglePlay(); });
+            navigator.mediaSession.setActionHandler('stop', () => { if (this.playing && !this.casting) this.togglePlay(); });
           }
 
           await this.refresh();
@@ -226,7 +230,7 @@
             this.loading = true;
             if (this.everPlayed) {
               // Resume: reconnect to get current live point, discarding buffered audio
-              audio.src = `${this.streamUrl}?t=${Date.now()}`;
+              audio.src = `${this.publicStreamUrl || this.streamUrl}?t=${Date.now()}`;
             }
             audio.play().catch(() => { this.loading = false; });
           }
@@ -252,9 +256,10 @@
           if (wasPlaying) audio.play().catch(() => {});
           try {
             await audio.remote.prompt();
-            // Cast connected — keep using the token URL
+            this.casting = true;
           } catch (e) {
             // User cancelled — restore the original authenticated URL
+            this.casting = false;
             this.loading = wasPlaying;
             audio.src = wasPlaying ? `${this.streamUrl}?t=${Date.now()}` : this.streamUrl;
             if (wasPlaying) audio.play().catch(() => { this.loading = false; });
