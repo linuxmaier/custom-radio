@@ -84,12 +84,16 @@ def get_status():
             }
         )
 
-    return {
+    result = {
         "now_playing": now_playing,
         "recent": recent,
         "pending_count": pending_count,
         "station_name": os.getenv("STATION_NAME", "Family Radio"),
     }
+    token = os.getenv("PUBLIC_STREAM_TOKEN", "")
+    if token:
+        result["public_stream_url"] = f"/stream-{token}"
+    return result
 
 
 @router.get("/library")
