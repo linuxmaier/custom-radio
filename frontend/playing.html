@@ -123,6 +123,9 @@
 
   <script>
     function playerPage() {
+      // Use the cached token URL immediately (populated by refresh() on first visit)
+      // so session restore and init() never race against the status fetch.
+      const _cachedPublicStream = localStorage.getItem('radioPublicStreamUrl') || '';
       return {
         nowPlaying: null,
         recent: [],
@@ -137,8 +140,8 @@
         airplayAvailable: false,
         castAvailable: false,
         casting: false,
-        streamUrl: `${location.protocol}//${location.hostname}/stream`,
-        publicStreamUrl: '',
+        streamUrl: _cachedPublicStream || `${location.protocol}//${location.hostname}/stream`,
+        publicStreamUrl: _cachedPublicStream,
         pushSupported: false,
         pushNeedsInstall: false,
         pushSubscribed: false,
@@ -253,12 +256,8 @@
             audio.remote.prompt().catch(() => {});
             return;
           }
-          // publicStreamUrl may not be set yet if the user clicks Cast before the
-          // first status fetch completes (watchAvailability fires faster than /api/status).
-          if (!this.publicStreamUrl) await this.refresh();
-
           if (!this.publicStreamUrl) {
-            // Token stream not configured — cast directly; will likely 401
+            // Token stream not configured — cast directly; will likely 401 on Chromecast
             audio.remote.prompt().catch(() => {});
             return;
           }
@@ -286,8 +285,16 @@
             this.recent = data.recent;
             this.pendingCount = data.pending_count;
             this.loaded = true;
-            if (data.public_stream_url && !this.publicStreamUrl) {
-              this.publicStreamUrl = `${location.protocol}//${location.hostname}${data.public_stream_url}`;
+            if (data.public_stream_url) {
+              const tokenUrl = `${location.protocol}//${location.hostname}${data.public_stream_url}`;
+              localStorage.setItem('radioPublicStreamUrl', tokenUrl);
+              if (!this.publicStreamUrl) {
+                this.publicStreamUrl = tokenUrl;
+                this.streamUrl = tokenUrl;
+              }
+            } else {
+              // Token removed from server — clear the cache
+              localStorage.removeItem('radioPublicStreamUrl');
             }
             if ('mediaSession' in navigator && this.nowPlaying) {
               navigator.mediaSession.metadata = new MediaMetadata({
