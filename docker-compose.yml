@@ -80,6 +80,7 @@ services:
     environment:
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
       - STATION_NAME=${STATION_NAME}
+      - PUBLIC_STREAM_TOKEN=${PUBLIC_STREAM_TOKEN}
     labels:
       - "family-radio.service=nginx"
     volumes:
