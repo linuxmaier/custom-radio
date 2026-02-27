@@ -45,7 +45,7 @@
 
     if (state && state.active) {
       document.addEventListener('DOMContentLoaded', function () {
-        var streamUrl = location.protocol + '//' + location.hostname + '/stream';
+        var streamUrl = localStorage.getItem('radioPublicStreamUrl') || (location.protocol + '//' + location.hostname + '/stream');
 
         document.body.insertAdjacentHTML('beforeend',
           '<div id="mini-player" class="mini-player">' +
