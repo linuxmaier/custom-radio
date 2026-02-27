@@ -22,7 +22,7 @@
       <h2>Admin Login</h2>
       <div class="form-group">
         <label>Admin Token</label>
-        <input type="text" x-model="tokenInput" placeholder="Bearer token" @keydown.enter="login()" />
+        <input type="password" x-model="tokenInput" placeholder="Admin token" @keydown.enter="login()" />
       </div>
       <div class="alert error" x-show="authError" x-cloak x-text="authError"></div>
       <button class="btn" @click="login()">Sign In</button>
@@ -84,7 +84,7 @@
           <span x-show="cookieStatus !== null && !cookieStatus.present"
                 style="color:var(--danger)">✗ No cookies — YouTube downloads will fail on AWS</span>
         </p>
-        <div style="display:flex; gap:0.75rem; align-items:center">
+        <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
           <input type="file" x-ref="cookieFile" accept=".txt" style="font-size:0.875rem" />
           <button class="btn" @click="uploadCookies()">Upload cookies.txt</button>
         </div>
@@ -108,8 +108,7 @@
                    x-text="track.error_msg"></div>
             </div>
             <span class="badge" :class="track.status" x-text="track.status"></span>
-            <button class="btn danger" style="padding:0.35rem 0.75rem; font-size:0.8rem"
-                    @click="deleteTrack(track.id)">✕</button>
+            <button class="btn danger btn-sm" @click="deleteTrack(track.id)">✕</button>
           </div>
         </template>
       </div>
