@@ -1,5 +1,5 @@
 /* Push notification helpers — exposes window.pushHelpers */
-(function () {
+(() => {
   function urlBase64ToUint8Array(base64String) {
     var padding = '='.repeat((4 - (base64String.length % 4)) % 4);
     var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -19,8 +19,7 @@
   // 'android' if a native install prompt is available, or false otherwise.
   function needsInstall() {
     var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    var isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches
-      || navigator.standalone === true;
+    var isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
     if (isIos && !isInStandaloneMode) return 'ios';
     return false;
   }
@@ -94,4 +93,4 @@
   }
 
   window.pushHelpers = { isSupported, needsInstall, isSubscribed, subscribe, unsubscribe };
-}());
+})();

@@ -9,6 +9,7 @@ MAKEFLAGS += --no-builtin-variables
 
 ruff := uvx ruff@0.15.2
 ty := uvx ty@0.0.19
+biome := npx @biomejs/biome@2.4.4
 venv := .venv
 
 # type-check deps: lightweight packages ty needs for import resolution
@@ -29,11 +30,13 @@ ci:
 	$(ruff) check api/
 	$(ruff) format --check api/
 	$(MAKE) typecheck
+	$(biome) check frontend/
 
 .PHONY: fix
 fix:
 	$(ruff) check --fix api/
 	$(ruff) format api/
+	$(biome) check --fix frontend/
 
 .PHONY: clean
 clean:
@@ -44,7 +47,7 @@ help:
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@echo "  ci         Run all checks (ruff lint + format + ty typecheck)"
+	@echo "  ci         Run all checks (ruff lint + format, ty typecheck, biome lint + format)"
 	@echo "  typecheck  Run ty type checking"
 	@echo "  fix        Auto-fix lint and format issues"
 	@echo "  clean      Remove type-check venv"

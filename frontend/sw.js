@@ -1,14 +1,14 @@
 /* Service Worker — Family Radio PWA */
 
-self.addEventListener('install', function (e) {
+self.addEventListener('install', (e) => {
   self.skipWaiting();
 });
 
-self.addEventListener('activate', function (e) {
+self.addEventListener('activate', (e) => {
   e.waitUntil(self.clients.claim());
 });
 
-self.addEventListener('push', function (e) {
+self.addEventListener('push', (e) => {
   var data = {};
   try {
     data = e.data ? e.data.json() : {};
@@ -27,11 +27,11 @@ self.addEventListener('push', function (e) {
   e.waitUntil(self.registration.showNotification(title, options));
 });
 
-self.addEventListener('notificationclick', function (e) {
+self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   var target = (e.notification.data && e.notification.data.url) || '/#playing';
   e.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clients) {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       for (var i = 0; i < clients.length; i++) {
         var c = clients[i];
         if ('focus' in c) {
@@ -40,6 +40,6 @@ self.addEventListener('notificationclick', function (e) {
         }
       }
       return self.clients.openWindow(target);
-    })
+    }),
   );
 });
