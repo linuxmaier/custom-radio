@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from database import db
 from fastapi import APIRouter
@@ -11,7 +11,7 @@ router = APIRouter()
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _build_annotate_uri(track: dict) -> str:

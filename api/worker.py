@@ -1,7 +1,7 @@
 import logging
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from alerts import send_alert
 from audio import extract_features
@@ -17,7 +17,7 @@ _stop_event = threading.Event()
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _process_job(job_id: int, track_id: str):
@@ -88,8 +88,8 @@ def _process_job(job_id: int, track_id: str):
         # Get duration via ffprobe
         import subprocess
 
-        result = subprocess.run(
-            [
+        result = subprocess.run(  # noqa: S603
+            [  # noqa: S607
                 "ffprobe",
                 "-v",
                 "quiet",

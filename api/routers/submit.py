@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 from database import db
@@ -25,7 +25,7 @@ DUPLICATE_MAX_RESULTS = 3
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _extract_youtube_video_id(url: str) -> str | None:
@@ -223,3 +223,5 @@ async def submit_track(
 
         logger.info(f"YouTube submission: track_id={track_id} url={url}")
         return JSONResponse({"track_id": track_id, "status": "pending"})
+
+    raise HTTPException(400, "Provide exactly one of: file or youtube_url")  # unreachable
