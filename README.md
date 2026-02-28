@@ -81,7 +81,7 @@ All views are behind HTTP Basic Auth (shared family username/password from `.env
 
 ### Player bar
 
-A persistent player bar is fixed at the bottom of the page once you've started the stream. It shows the current track title and artist, a play/pause button, and a cast button (when a Chromecast or AirPlay device is available). Tapping the track title navigates to the Now Playing view.
+A persistent player bar is fixed at the bottom of the page once you've started the stream. It shows the current track title and artist, a play/pause button, and a Chromecast cast button (when a cast device is available). Tapping the track title navigates to the Now Playing view. An AirPlay button is available on the Now Playing view only.
 
 Because the app is a single-page app, the audio element is never destroyed on navigation — the stream plays continuously regardless of which view is active. Cast state also persists across view changes.
 
@@ -109,7 +109,7 @@ All public endpoints are proxied through nginx at `/api/`.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/submit` | Submit a track (multipart form); optional `comment` field (max 80 chars) shown on the Now Playing page and in push notifications |
-| `GET` | `/api/status` | Now playing + recent 10 tracks + pending count + `station_name` |
+| `GET` | `/api/status` | Now playing + recent 10 tracks + pending count + `station_name` + `public_stream_url` (if `PUBLIC_STREAM_TOKEN` is set) |
 | `GET` | `/api/public-library` | Ready tracks with play counts, grouped by submitter |
 | `GET` | `/api/library` | All tracks with status (admin use) |
 | `GET` | `/api/track/{id}` | Single track (for polling submission status) |
@@ -153,6 +153,7 @@ See `.env.example` for the full list:
 | `VAPID_PRIVATE_KEY` | VAPID private key (base64url) for Web Push notifications; leave unset to disable push |
 | `VAPID_PUBLIC_KEY` | VAPID public key (base64url) served to browsers for push subscription |
 | `VAPID_CLAIMS_EMAIL` | Contact email included in VAPID JWT claims (e.g. `admin@yourfamily.com`) |
+| `PUBLIC_STREAM_TOKEN` | Token for the unauthenticated public stream URL (`/stream-WORD1-WORD2-WORD3`); used by smart speakers, Chromecast, and other devices that can't send HTTP Basic Auth. Leave unset to disable. |
 
 ## Backups
 
@@ -327,6 +328,7 @@ family-radio/
 │   ├── sw.js               # service worker: push events, notificationclick
 │   └── static/
 │       ├── style.css
+│       ├── nav.js          # injects <nav> with hash links; registers SW; syncs station name
 │       ├── push.js         # browser-side push helpers (window.pushHelpers)
 │       ├── icon-192.png    # PWA home screen icon (192×192)
 │       ├── icon-512.png    # PWA splash screen icon (512×512)
