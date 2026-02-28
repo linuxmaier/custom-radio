@@ -89,6 +89,10 @@ server {
         limit_conn stream_conn 10;
     }
 
+    location = /playing.html { return 301 /#playing; }
+    location = /library.html { return 301 /#library; }
+    location = /admin.html   { return 301 /#admin; }
+
     location / {
         try_files $uri $uri.html $uri/ =404;
     }
