@@ -1,4 +1,5 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+[x-cloak] { display: none !important; }
 
 :root {
   --bg: #0f1117;
@@ -267,7 +268,7 @@ button.btn.btn-sm {
   padding: 3rem 1rem;
 }
 
-.mini-player {
+.player-bar {
   position: fixed;
   bottom: 0;
   left: 0;
@@ -282,14 +283,14 @@ button.btn.btn-sm {
   z-index: 99;
 }
 
-.mini-track {
+.player-bar-track {
   flex: 1;
   min-width: 0;
   text-decoration: none;
   color: var(--text);
 }
 
-.mini-title {
+.player-bar-title {
   font-size: 0.875rem;
   font-weight: 500;
   white-space: nowrap;
@@ -297,7 +298,7 @@ button.btn.btn-sm {
   text-overflow: ellipsis;
 }
 
-.mini-sub {
+.player-bar-sub {
   font-size: 0.75rem;
   color: var(--muted);
   white-space: nowrap;
@@ -322,8 +323,10 @@ button.btn.btn-sm {
 }
 
 .mini-btn:hover { background: var(--accent-hover); }
+.mini-btn.secondary { background: var(--border); color: var(--muted); }
+.mini-btn.secondary:hover { background: #3a3d4a; color: var(--text); }
 
-body.has-mini-player { padding-bottom: 56px; }
+body.has-player-bar { padding-bottom: 56px; }
 
 @media (max-width: 480px) {
   .container { padding: 1rem; }
@@ -376,12 +379,12 @@ body.has-mini-player { padding-bottom: 56px; }
   /* Ensure small buttons still meet minimum touch target height */
   button.btn.btn-sm { min-height: 44px; }
 
-  /* Mini-player sits above the tab bar */
-  .mini-player {
+  /* Player bar sits above the tab bar */
+  .player-bar {
     bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
-  body.has-mini-player {
+  body.has-player-bar {
     padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   }
 }

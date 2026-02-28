@@ -58,6 +58,7 @@ services:
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
       - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
       - VAPID_CLAIMS_EMAIL=${VAPID_CLAIMS_EMAIL}
+      - PUBLIC_STREAM_TOKEN=${PUBLIC_STREAM_TOKEN:-}
     expose:
       - "8000"
 
@@ -80,6 +81,7 @@ services:
     environment:
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
       - STATION_NAME=${STATION_NAME}
+      - PUBLIC_STREAM_TOKEN=${PUBLIC_STREAM_TOKEN:-}
     labels:
       - "family-radio.service=nginx"
     volumes:

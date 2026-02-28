@@ -21,7 +21,7 @@ self.addEventListener('push', function (e) {
     badge: '/static/badge-96.png',
     tag: 'new-track',
     renotify: true,
-    data: { url: data.url || '/playing.html' },
+    data: { url: data.url || '/#playing' },
   };
 
   e.waitUntil(self.registration.showNotification(title, options));
@@ -29,12 +29,13 @@ self.addEventListener('push', function (e) {
 
 self.addEventListener('notificationclick', function (e) {
   e.notification.close();
-  var target = (e.notification.data && e.notification.data.url) || '/playing.html';
+  var target = (e.notification.data && e.notification.data.url) || '/#playing';
   e.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clients) {
       for (var i = 0; i < clients.length; i++) {
         var c = clients[i];
-        if (new URL(c.url).pathname === target && 'focus' in c) {
+        if ('focus' in c) {
+          if (c.navigate) c.navigate(target);
           return c.focus();
         }
       }

@@ -68,22 +68,22 @@ The override does three things: uses `nginx/local.conf.template` (HTTP on port 8
 
 ## Web UI
 
-| Page | URL | Purpose |
+The frontend is a single-page app — navigation between views does not reload the page or interrupt the audio stream.
+
+| View | URL | Purpose |
 |------|-----|---------|
-| Submit | `/` | Add a song (file upload or YouTube link) |
-| Now Playing | `/playing.html` | See what's on, recent history, and manage push notifications |
-| Library | `/library.html` | All songs grouped by submitter with play counts |
-| Admin | `/admin.html` | Change mode, skip track, manage library |
+| Now Playing | `/` or `/#playing` | See what's on, recent history, and manage push notifications |
+| Submit | `/#submit` | Add a song (file upload or YouTube link) |
+| Library | `/#library` | All songs grouped by submitter with play counts |
+| Admin | `/#admin` | Change mode, skip track, manage library |
 
-All pages are behind HTTP Basic Auth (shared family username/password from `.env`). The admin page additionally requires an admin token sent via the `X-Admin-Token` header.
+All views are behind HTTP Basic Auth (shared family username/password from `.env`). The Admin view additionally requires an admin token sent via the `X-Admin-Token` header.
 
-### Mini-player
+### Player bar
 
-A persistent mini-player bar appears at the bottom of every page (except Now Playing) once you've started the stream. It shows the current track and lets you play/pause without navigating back.
+A persistent player bar is fixed at the bottom of the page once you've started the stream. It shows the current track title and artist, a play/pause button, and a cast button (when a Chromecast or AirPlay device is available). Tapping the track title navigates to the Now Playing view.
 
-**Auto-resume behaviour differs by context:**
-- **Installed PWA** (Add to Home Screen on iOS/Android): the stream resumes automatically when you navigate between pages.
-- **Desktop and mobile browsers** (non-installed): browsers block unmuted autoplay across page navigations, so the mini-player appears with a ▶ button. Tap or click it once to resume.
+Because the app is a single-page app, the audio element is never destroyed on navigation — the stream plays continuously regardless of which view is active. Cast state also persists across view changes.
 
 ## Programming Modes
 
@@ -323,10 +323,7 @@ family-radio/
 │       ├── status.py
 │       └── push.py         # /manifest.json, /push/vapid-key, /push/subscribe, /push/unsubscribe
 ├── frontend/
-│   ├── index.html
-│   ├── playing.html        # includes push notification subscribe/unsubscribe UI
-│   ├── library.html        # tracks grouped by submitter with play counts
-│   ├── admin.html
+│   ├── index.html          # single-page app: all views (submit, now playing, library, admin)
 │   ├── sw.js               # service worker: push events, notificationclick
 │   └── static/
 │       ├── style.css
