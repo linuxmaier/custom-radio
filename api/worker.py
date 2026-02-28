@@ -105,9 +105,7 @@ def _process_job(job_id: int, track_id: str):
         if result.returncode == 0:
             import json
 
-            info = json.load(
-                result.stdout if hasattr(result.stdout, "read") else __import__("io").StringIO(result.stdout)
-            )
+            info = json.loads(result.stdout)
             for stream in info.get("streams", []):
                 if stream.get("codec_type") == "audio":
                     duration_s = float(stream.get("duration", 0)) or None

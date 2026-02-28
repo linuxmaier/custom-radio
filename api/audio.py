@@ -1,6 +1,6 @@
 import logging
 
-import librosa
+import librosa  # ty: ignore[unresolved-import]
 import numpy as np
 from models import AudioFeatures
 

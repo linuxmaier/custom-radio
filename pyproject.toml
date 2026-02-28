@@ -4,3 +4,7 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
+
+[tool.ty.environment]
+python-version = "3.12"
+root = ["api"]
