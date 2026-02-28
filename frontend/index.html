@@ -223,7 +223,6 @@
             </div>
           </div>
         </template>
-      </ul>
       </div>
 
       <div x-show="recent.length === 0 && loaded" class="empty-state" x-cloak>
@@ -394,9 +393,9 @@
   <script>
     // Timing wrapper: stamps all [radio] console output with HH:MM:SS.mmm.
     // Trade-off: DevTools shows this wrapper's line number, not the call site.
-    (function () {
+    ((() => {
       function _stamp(orig) {
-        return function (...args) {
+        return (...args) => {
           if (typeof args[0] === 'string' && args[0].startsWith('[radio]')) {
             args[0] = '[radio ' + new Date().toISOString().slice(11, 23) + ']' + args[0].slice(7);
           }
@@ -406,7 +405,7 @@
       console.log   = _stamp(console.log.bind(console));
       console.warn  = _stamp(console.warn.bind(console));
       console.error = _stamp(console.error.bind(console));
-    }());
+    })());
 
     function shell() {
       var _cachedPublicStream = localStorage.getItem('radioPublicStreamUrl') || '';
@@ -977,8 +976,8 @@
         },
 
         async setBlockSize(val) {
-          const n = parseInt(val);
-          if (isNaN(n) || n < 1 || n > 20) return;
+          const n = parseInt(val, 10);
+          if (Number.isNaN(n) || n < 1 || n > 20) return;
           const res = await this.apiPost('/api/admin/config', { rotation_tracks_per_block: n });
           if (res.ok) {
             this.config.rotation_tracks_per_block = n;
