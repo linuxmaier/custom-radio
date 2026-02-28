@@ -172,6 +172,9 @@
         </div>
         <div x-show="nowPlaying?.comment" style="margin-top:0.4rem; font-size:0.9rem; color: var(--muted); font-style:italic;"
              x-text="nowPlaying?.comment"></div>
+        <div x-show="casting" x-cloak style="margin-top:0.5rem; font-size:0.8rem; color: var(--muted);">
+          Cast audio may be a few seconds behind the live stream.
+        </div>
       </div>
 
       <div x-show="!nowPlaying && loaded" class="now-playing" x-cloak>

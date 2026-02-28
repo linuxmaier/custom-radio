@@ -323,6 +323,8 @@ button.btn.btn-sm {
 }
 
 .mini-btn:hover { background: var(--accent-hover); }
+.mini-btn.secondary { background: var(--border); color: var(--muted); }
+.mini-btn.secondary:hover { background: #3a3d4a; color: var(--text); }
 
 body.has-player-bar { padding-bottom: 56px; }
 
