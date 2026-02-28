@@ -33,7 +33,7 @@ _hostname = os.environ.get("SERVER_HOSTNAME", "")
 _origins = [f"https://{_hostname}"] if _hostname else ["http://localhost", "http://localhost:8000"]
 
 app.add_middleware(
-    CORSMiddleware,
+    CORSMiddleware,  # ty: ignore[invalid-argument-type]
     allow_origins=_origins,
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type", "X-Admin-Token"],

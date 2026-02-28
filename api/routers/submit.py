@@ -137,7 +137,7 @@ async def submit_track(
     title: str = Form(None),
     artist: str = Form(None),
     file: UploadFile = File(None),
-    comment: str = Form(None),
+    comment: str | None = Form(None),
 ):
     if not submitter or not submitter.strip():
         raise HTTPException(400, "submitter is required")
@@ -166,6 +166,7 @@ async def submit_track(
     track_id = str(uuid.uuid4())
 
     if has_file:
+        assert file is not None and file.filename is not None
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
             raise HTTPException(400, f"Unsupported file type: {ext}")

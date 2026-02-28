@@ -195,7 +195,7 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
     }
 
 
-def _pick_mood_track() -> str:
+def _pick_mood_track() -> dict | None:
     """Pick track with minimum Euclidean distance from the last played track."""
     # Get the last played track's features
     with db() as conn:
