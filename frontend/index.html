@@ -3,129 +3,713 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Submit a Song</title>
+  <title>Radio</title>
   <link rel="manifest" href="/api/manifest.json" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="/static/favicon.png" />
   <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/push.js"></script>
   <script defer src="/static/alpinejs-3.15.8.min.js"></script>
 </head>
-<body>
+<body x-data="shell()" x-init="init()" :class="{ 'has-player-bar': everPlayed }">
   <script src="/static/nav.js"></script>
 
-  <div class="container" x-data="submitForm()">
-    <h1>Add a Song</h1>
-    <p class="subtitle">Share music with the family. It'll start playing within a few minutes.</p>
+  <div class="container">
 
-    <!-- Alerts -->
-    <div x-show="successTrackId" class="alert success" x-cloak>
-      Song submitted! Track ID: <code x-text="successTrackId"></code>
-      <span x-show="pollStatus === 'ready'"> — Now in the queue ✓</span>
-      <span x-show="pollStatus === 'pending' || pollStatus === 'processing'"> — Processing…</span>
-      <span x-show="pollStatus === 'failed'" style="color: var(--danger)"> — Processing failed.</span>
+    <!-- ── Submit view ── -->
+    <div x-show="view === 'submit'" x-data="submitView()" x-init="initSubmit()">
+      <h1>Add a Song</h1>
+      <p class="subtitle">Share music with the family. It'll start playing within a few minutes.</p>
+
+      <div x-show="successTrackId" class="alert success" x-cloak>
+        Song submitted! Track ID: <code x-text="successTrackId"></code>
+        <span x-show="pollStatus === 'ready'"> — Now in the queue ✓</span>
+        <span x-show="pollStatus === 'pending' || pollStatus === 'processing'"> — Processing…</span>
+        <span x-show="pollStatus === 'failed'" style="color: var(--danger)"> — Processing failed.</span>
+      </div>
+
+      <div x-show="warning" class="alert warning" x-cloak>
+        ⚠️ <span x-text="warning"></span>
+      </div>
+
+      <div x-show="duplicates.length && !submitAnyway" class="alert warning" x-cloak>
+        ⚠️ This song may already be in the library:
+        <ul style="margin: 0.5rem 0 0.75rem; padding-left: 1.25rem;">
+          <template x-for="d in duplicates" :key="d.id">
+            <li x-text="`${d.title} by ${d.artist} (added by ${d.submitter})`"></li>
+          </template>
+        </ul>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button type="button" class="btn" @click="submitAnyway = true; submitSong()">Submit anyway</button>
+          <button type="button" class="btn secondary" @click="duplicates = []; submitAnyway = false">Cancel</button>
+        </div>
+      </div>
+
+      <div x-show="errorMsg" class="alert error" x-cloak>
+        <span x-text="errorMsg"></span>
+      </div>
+
+      <div class="card">
+        <div class="tabs">
+          <button class="tab-btn" :class="{ active: tab === 'file' }" @click="tab = 'file'">Upload File</button>
+          <button class="tab-btn" :class="{ active: tab === 'youtube' }" @click="tab = 'youtube'">YouTube</button>
+        </div>
+
+        <form @submit.prevent="submitSong">
+          <div class="form-group">
+            <label for="submitter">Your name</label>
+            <input id="submitter" type="text" x-model="submitter"
+                   list="submitter-names"
+                   placeholder="e.g. Mom, Dad, Grandpa…" required />
+            <datalist id="submitter-names">
+              <template x-for="name in submitterNames" :key="name">
+                <option :value="name"></option>
+              </template>
+            </datalist>
+          </div>
+
+          <div x-show="tab === 'file'">
+            <div class="form-group">
+              <label for="fileInput">Audio file (MP3, WAV, FLAC, M4A, OGG — max 200MB)</label>
+              <input id="fileInput" type="file" accept=".mp3,.wav,.flac,.m4a,.ogg,.opus"
+                     @change="fileSelected($event)" />
+            </div>
+            <div class="form-group">
+              <label for="titleInput">Title (optional — auto-detected from file name)</label>
+              <input id="titleInput" type="text" x-model="title"
+                     @input="title && scheduleDupCheck()"
+                     placeholder="Song title" />
+            </div>
+            <div class="form-group">
+              <label for="artistInput">Artist (optional)</label>
+              <input id="artistInput" type="text" x-model="artist" placeholder="Artist name" />
+            </div>
+          </div>
+
+          <div x-show="tab === 'youtube'">
+            <div class="form-group">
+              <label for="ytUrl">YouTube URL</label>
+              <input id="ytUrl" type="url" x-model="youtubeUrl"
+                     @input="scheduleDupCheck()"
+                     placeholder="https://www.youtube.com/watch?v=…" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="commentInput">Comment (optional — shown on the Now Playing page)</label>
+            <textarea id="commentInput" x-model="comment" maxlength="80"
+                      placeholder="A note for the family…" rows="2"></textarea>
+          </div>
+
+          <button type="submit" class="btn" :disabled="submitting">
+            <span x-show="submitting" class="spinner"></span>
+            <span x-text="submitting ? 'Submitting…' : 'Add to Station'"></span>
+          </button>
+        </form>
+      </div>
+
+      <div class="card" x-show="successTrackId" x-cloak>
+        <h2>Submission Status</h2>
+        <div class="track-item">
+          <div class="track-meta">
+            <div class="track-title" x-text="submittedTitle || 'Processing…'"></div>
+            <div class="track-sub" x-text="submittedArtist"></div>
+          </div>
+          <span class="badge" :class="pollStatus" x-text="pollStatus"></span>
+        </div>
+        <p style="margin-top:1rem; color: var(--muted); font-size:0.875rem;">
+          You can check <a href="/#playing" style="color:var(--accent)">Now Playing</a> once it's ready.
+        </p>
+      </div>
     </div>
+    <!-- ── /Submit view ── -->
 
-    <div x-show="warning" class="alert warning" x-cloak>
-      ⚠️ <span x-text="warning"></span>
-    </div>
+    <!-- ── Now Playing view (reads shell() scope directly) ── -->
+    <div x-show="view === 'playing'">
+      <h1>Now Playing</h1>
 
-    <div x-show="duplicates.length && !submitAnyway" class="alert warning" x-cloak>
-      ⚠️ This song may already be in the library:
-      <ul style="margin: 0.5rem 0 0.75rem; padding-left: 1.25rem;">
-        <template x-for="d in duplicates" :key="d.id">
-          <li x-text="`${d.title} by ${d.artist} (added by ${d.submitter})`"></li>
+      <div class="card">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <button class="btn" style="font-size:1.1rem; flex:1;" @click="togglePlay()" :disabled="loading">
+            <span x-show="loading" class="spinner"></span>
+            <span x-text="loading ? 'Connecting…' : (playing ? '⏸ Pause' : (everPlayed ? '▶ Resume from Live' : '▶ Play'))"></span>
+          </button>
+
+          <span x-show="playing" class="live-indicator" x-cloak>
+            <span class="live-dot"></span> LIVE
+          </span>
+
+          <button x-show="airplayAvailable" @click="airPlay()" x-cloak
+                  class="btn secondary" style="font-size:0.875rem; flex-shrink:0;">
+            AirPlay
+          </button>
+
+          <button x-show="castAvailable || casting" @click="cast()" x-cloak
+                  class="btn" :class="casting ? '' : 'secondary'"
+                  style="padding:0.5rem 0.6rem; flex-shrink:0;"
+                  :aria-label="casting ? 'Stop casting' : 'Cast to device'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"/>
+            </svg>
+          </button>
+        </div>
+
+        <div x-show="castMsg" x-cloak style="margin-top:0.5rem; font-size:0.8rem; color:var(--muted);" x-text="castMsg"></div>
+
+        <div x-show="!isIos" style="display:flex; align-items:center; gap:0.4rem; margin-top:0.75rem;">
+          <span style="opacity:0.5; font-size:0.9rem; line-height:1;">🔈</span>
+          <input type="range" min="0" max="1" step="0.05" x-model="volume" @input="setVolume()" style="flex:1; cursor:pointer;" />
+          <span style="opacity:0.5; font-size:0.9rem; line-height:1;">🔊</span>
+        </div>
+      </div>
+
+      <div x-show="nowPlaying" class="now-playing" x-cloak>
+        <div class="label">♪ On Air</div>
+        <div class="title" x-text="nowPlaying?.title"></div>
+        <div class="artist" x-text="nowPlaying?.artist"></div>
+        <div style="margin-top:0.5rem; font-size:0.8rem; color: var(--muted);">
+          Submitted by <strong x-text="nowPlaying?.submitter"></strong>
+        </div>
+        <div x-show="nowPlaying?.comment" style="margin-top:0.4rem; font-size:0.9rem; color: var(--muted); font-style:italic;"
+             x-text="nowPlaying?.comment"></div>
+      </div>
+
+      <div x-show="!nowPlaying && loaded" class="now-playing" x-cloak>
+        <div class="label">Station</div>
+        <div class="title">Starting up…</div>
+        <div class="artist" style="color:var(--muted)">Nothing playing yet. Submit a song!</div>
+      </div>
+
+      <div class="card" x-show="pushSupported" x-cloak>
+        <h2>Notifications</h2>
+        <p style="color:var(--muted); font-size:0.875rem; margin-bottom:0.75rem;">
+          Get notified when a family member adds a new song.
+        </p>
+
+        <div x-show="pushNeedsInstall === 'ios'" style="color:var(--muted); font-size:0.875rem;">
+          To enable notifications on iOS, tap <strong>Share → Add to Home Screen</strong> first,
+          then open the app from your home screen and come back here.
+        </div>
+
+        <div x-show="pushNeedsInstall !== 'ios'">
+          <button class="btn" :class="pushSubscribed ? 'btn-secondary' : ''"
+                  :disabled="pushBusy"
+                  @click="togglePush()">
+            <span x-show="pushBusy" class="spinner"></span>
+            <span x-text="pushSubscribed ? 'Turn off notifications' : 'Turn on notifications'"></span>
+          </button>
+          <div x-show="pushError" class="alert error" x-cloak style="margin-top:0.5rem;"
+               x-text="pushError"></div>
+        </div>
+      </div>
+
+      <div x-show="pendingCount > 0" class="alert warning" x-cloak>
+        <span x-text="pendingCount"></span> song(s) processing in the background.
+      </div>
+
+      <div class="card" x-show="recent.length > 0" x-cloak>
+        <h2>Recently Played</h2>
+        <template x-for="track in recent" :key="track.played_at">
+          <div class="track-item">
+            <div class="track-meta">
+              <div class="track-title" x-text="track.title"></div>
+              <div class="track-sub">
+                <span x-text="track.artist"></span> · by <span x-text="track.submitter"></span>
+                · <span x-text="timeAgo(track.played_at)"></span>
+              </div>
+            </div>
+          </div>
         </template>
       </ul>
-      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-        <button type="button" class="btn" @click="submitAnyway = true; submitSong()">Submit anyway</button>
-        <button type="button" class="btn secondary" @click="duplicates = []; submitAnyway = false">Cancel</button>
-      </div>
-    </div>
-
-    <div x-show="errorMsg" class="alert error" x-cloak>
-      <span x-text="errorMsg"></span>
-    </div>
-
-    <div class="card">
-      <!-- Source tabs -->
-      <div class="tabs">
-        <button class="tab-btn" :class="{ active: tab === 'file' }" @click="tab = 'file'">Upload File</button>
-        <button class="tab-btn" :class="{ active: tab === 'youtube' }" @click="tab = 'youtube'">YouTube</button>
       </div>
 
-      <form @submit.prevent="submitSong">
+      <div x-show="recent.length === 0 && loaded" class="empty-state" x-cloak>
+        No play history yet.
+      </div>
+    </div>
+    <!-- ── /Now Playing view ── -->
+
+    <!-- ── Library view (lazy loaded on first visit) ── -->
+    <div x-show="view === 'library'"
+         x-data="libraryView()"
+         @load-library.window="loadTracks()">
+      <h1>Station Library</h1>
+      <p class="subtitle">All songs in the station, grouped by who added them.</p>
+
+      <div x-show="loading" class="empty-state">Loading…</div>
+      <div x-show="!loading && tracks.length === 0" class="empty-state">No tracks in the library yet.</div>
+
+      <template x-for="[submitter, submitterTracks] in bySubmitter" :key="submitter">
+        <div class="card">
+          <h2 x-text="`${submitter} (${submitterTracks.length})`"></h2>
+          <template x-for="track in submitterTracks" :key="track.id">
+            <div class="track-item">
+              <div class="track-meta">
+                <div class="track-title" x-text="track.title"></div>
+                <div class="track-sub" x-text="track.artist"></div>
+              </div>
+              <div style="text-align:right; font-size:0.8rem; color:var(--muted); flex-shrink:0;">
+                <div x-text="formatDate(track.submitted_at)"></div>
+                <div x-text="track.play_count === 1 ? '1 play' : track.play_count + ' plays'"></div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+    <!-- ── /Library view ── -->
+
+    <!-- ── Admin view (lazy loaded on first visit) ── -->
+    <div x-show="view === 'admin'"
+         x-data="adminView()"
+         @load-admin.window="loadAdmin()">
+      <h1>Admin</h1>
+      <p class="subtitle">Manage the station programming and library.</p>
+
+      <div class="card" x-show="!authed">
+        <h2>Admin Login</h2>
         <div class="form-group">
-          <label for="submitter">Your name</label>
-          <input id="submitter" type="text" x-model="submitter"
-                 list="submitter-names"
-                 placeholder="e.g. Mom, Dad, Grandpa…" required />
-          <datalist id="submitter-names">
-            <template x-for="name in submitterNames" :key="name">
-              <option :value="name"></option>
-            </template>
-          </datalist>
+          <label>Admin Token</label>
+          <input type="text" x-model="tokenInput" placeholder="Bearer token" @keydown.enter="login()" />
         </div>
-
-        <!-- File upload -->
-        <div x-show="tab === 'file'">
-          <div class="form-group">
-            <label for="fileInput">Audio file (MP3, WAV, FLAC, M4A, OGG — max 200MB)</label>
-            <input id="fileInput" type="file" accept=".mp3,.wav,.flac,.m4a,.ogg,.opus"
-                   @change="fileSelected($event)" />
-          </div>
-          <div class="form-group">
-            <label for="titleInput">Title (optional — auto-detected from file name)</label>
-            <input id="titleInput" type="text" x-model="title"
-                   @input="title && scheduleDupCheck()"
-                   placeholder="Song title" />
-          </div>
-          <div class="form-group">
-            <label for="artistInput">Artist (optional)</label>
-            <input id="artistInput" type="text" x-model="artist" placeholder="Artist name" />
-          </div>
-        </div>
-
-        <!-- YouTube -->
-        <div x-show="tab === 'youtube'">
-          <div class="form-group">
-            <label for="ytUrl">YouTube URL</label>
-            <input id="ytUrl" type="url" x-model="youtubeUrl"
-                   @input="scheduleDupCheck()"
-                   placeholder="https://www.youtube.com/watch?v=…" />
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="commentInput">Comment (optional — shown on the Now Playing page)</label>
-          <textarea id="commentInput" x-model="comment" maxlength="80"
-                    placeholder="A note for the family…" rows="2"></textarea>
-        </div>
-
-        <button type="submit" class="btn" :disabled="submitting">
-          <span x-show="submitting" class="spinner"></span>
-          <span x-text="submitting ? 'Submitting…' : 'Add to Station'"></span>
-        </button>
-      </form>
-    </div>
-
-    <!-- Status card after submission -->
-    <div class="card" x-show="successTrackId" x-cloak>
-      <h2>Submission Status</h2>
-      <div class="track-item">
-        <div class="track-meta">
-          <div class="track-title" x-text="submittedTitle || 'Processing…'"></div>
-          <div class="track-sub" x-text="submittedArtist"></div>
-        </div>
-        <span class="badge" :class="pollStatus" x-text="pollStatus"></span>
+        <div class="alert error" x-show="authError" x-cloak x-text="authError"></div>
+        <button class="btn" @click="login()">Sign In</button>
       </div>
-      <p style="margin-top:1rem; color: var(--muted); font-size:0.875rem;">
-        You can check <a href="/playing.html" style="color:var(--accent)">Now Playing</a> once it's ready.
-      </p>
+
+      <div x-show="authed" x-cloak>
+        <div class="alert success" x-show="successMsg" x-cloak x-text="successMsg"></div>
+        <div class="alert error" x-show="errorMsg" x-cloak x-text="errorMsg"></div>
+
+        <div class="card">
+          <h2>Programming Mode</h2>
+          <div class="mode-toggle" style="margin-bottom:1rem">
+            <button class="btn" :class="{ secondary: config.programming_mode !== 'rotation' }"
+                    @click="setMode('rotation')">Rotation</button>
+            <button class="btn" :class="{ secondary: config.programming_mode !== 'mood' }"
+                    @click="setMode('mood')">Mood Match</button>
+          </div>
+          <p style="color:var(--muted); font-size:0.875rem">
+            <strong>Rotation:</strong> Round-robin through each submitter, playing N songs per block.<br>
+            <strong>Mood:</strong> Automatically picks the next song based on audio energy/feel.
+          </p>
+
+          <div class="form-group" style="margin-top:1.2rem" x-show="config.programming_mode === 'rotation'">
+            <label>Songs per submitter block</label>
+            <input type="text" style="width:80px"
+                   :value="config.rotation_tracks_per_block"
+                   @change="setBlockSize($event.target.value)" />
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Playback Controls</h2>
+          <p style="color:var(--muted); font-size:0.875rem; margin-bottom:1rem">
+            Skip signals the player to move to the next song. Takes effect within a few seconds.
+          </p>
+          <button class="btn" @click="skip()">⏭ Skip Current Track</button>
+        </div>
+
+        <div class="card">
+          <h2>YouTube Cookies</h2>
+          <p style="color:var(--muted); font-size:0.875rem; margin-bottom:1rem">
+            YouTube downloads from AWS IPs require cookies from a signed-in account.
+            Upload a <code>cookies.txt</code> (Netscape format) exported from a browser.
+            Refresh when submissions fail with a bot-check error.
+          </p>
+          <p style="font-size:0.875rem; margin-bottom:1rem">
+            Status:
+            <span x-show="cookieStatus === null" style="color:var(--muted)">loading…</span>
+            <span x-show="cookieStatus !== null && cookieStatus.present"
+                  style="color:var(--success)">
+              ✓ Cookies present
+              <span x-show="cookieStatus.updated_at" style="color:var(--muted)"
+                    x-text="' (updated ' + new Date(cookieStatus.updated_at).toLocaleDateString() + ')'"></span>
+            </span>
+            <span x-show="cookieStatus !== null && !cookieStatus.present"
+                  style="color:var(--danger)">✗ No cookies — YouTube downloads will fail on AWS</span>
+          </p>
+          <div style="display:flex; gap:0.75rem; align-items:center">
+            <input type="file" x-ref="cookieFile" accept=".txt" style="font-size:0.875rem" />
+            <button class="btn" @click="uploadCookies()">Upload cookies.txt</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Library (<span x-text="tracks.length"></span> tracks)</h2>
+          <div x-show="tracks.length === 0" class="empty-state">No tracks yet.</div>
+
+          <template x-for="track in tracks" :key="track.id">
+            <div class="track-item">
+              <div class="track-meta">
+                <div class="track-title" x-text="track.title"></div>
+                <div class="track-sub">
+                  <span x-text="track.artist"></span> · by <span x-text="track.submitter"></span>
+                  · <span x-text="track.source_type"></span>
+                  <span x-show="track.duration_s"> · <span x-text="formatDuration(track.duration_s)"></span></span>
+                </div>
+                <div x-show="track.error_msg" style="color: var(--danger); font-size:0.8rem; margin-top:0.2rem"
+                     x-text="track.error_msg"></div>
+              </div>
+              <span class="badge" :class="track.status" x-text="track.status"></span>
+              <button class="btn danger" style="padding:0.35rem 0.75rem; font-size:0.8rem"
+                      @click="deleteTrack(track.id)">✕</button>
+            </div>
+          </template>
+        </div>
+      </div>
     </div>
+    <!-- ── /Admin view ── -->
+
+  </div>
+
+  <!-- Persistent audio element (lives in shell scope, survives all navigation) -->
+  <audio x-ref="audio" preload="auto"></audio>
+
+  <!-- Persistent player bar (visible after first play) -->
+  <div class="player-bar" x-show="everPlayed" x-cloak>
+    <a href="/#playing" class="player-bar-track">
+      <div class="player-bar-title" x-text="nowPlaying?.title ?? 'Starting up…'"></div>
+      <div class="player-bar-sub" x-text="nowPlaying?.artist ?? ''"></div>
+    </a>
+    <span x-show="playing" class="live-indicator" x-cloak>
+      <span class="live-dot"></span> LIVE
+    </span>
+    <button class="mini-btn" @click="togglePlay()" :disabled="loading" aria-label="Play/Pause">
+      <span x-show="loading" class="spinner"></span>
+      <span x-show="!loading" x-text="playing ? '⏸' : '▶'"></span>
+    </button>
+    <button x-show="castAvailable || casting" @click="cast()" class="mini-btn"
+            :class="casting ? '' : 'secondary'"
+            :aria-label="casting ? 'Stop casting' : 'Cast to device'"
+            :title="casting ? 'Use Google Home or the cast notification to stop casting' : 'Cast to device'">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"/>
+      </svg>
+    </button>
   </div>
 
   <script>
-    function submitForm() {
+    // Timing wrapper: stamps all [radio] console output with HH:MM:SS.mmm.
+    // Trade-off: DevTools shows this wrapper's line number, not the call site.
+    (function () {
+      function _stamp(orig) {
+        return function (...args) {
+          if (typeof args[0] === 'string' && args[0].startsWith('[radio]')) {
+            args[0] = '[radio ' + new Date().toISOString().slice(11, 23) + ']' + args[0].slice(7);
+          }
+          orig.apply(console, args);
+        };
+      }
+      console.log   = _stamp(console.log.bind(console));
+      console.warn  = _stamp(console.warn.bind(console));
+      console.error = _stamp(console.error.bind(console));
+    }());
+
+    function shell() {
+      var _cachedPublicStream = localStorage.getItem('radioPublicStreamUrl') || '';
+      return {
+        view: 'playing',
+        nowPlaying: null,
+        recent: [],
+        pendingCount: 0,
+        loaded: false,
+        playing: false,
+        loading: false,
+        everPlayed: false,
+        volume: 1,
+        isIos: /iphone|ipad|ipod/i.test(navigator.userAgent),
+        airplayAvailable: false,
+        castAvailable: false,
+        casting: false,
+        castMsg: '',
+        streamUrl: _cachedPublicStream || (location.protocol + '//' + location.hostname + '/stream'),
+        publicStreamUrl: _cachedPublicStream,
+        pushSupported: false,
+        pushNeedsInstall: false,
+        pushSubscribed: false,
+        pushBusy: false,
+        pushError: '',
+
+        init() {
+          console.log('[radio] init — streamUrl:', this.streamUrl, 'publicStreamUrl:', this.publicStreamUrl);
+          this._applyHash(location.hash);
+          window.addEventListener('hashchange', () => { this._applyHash(location.hash); });
+
+          const audio = this.$refs.audio;
+          this._audio = audio;
+          audio.volume = this.volume;
+          audio.src = this.streamUrl;
+          console.log('[radio] audio.src set to:', audio.src, '| readyState:', audio.readyState);
+
+          this._setupAudioListeners(audio);
+          this.airplayAvailable = typeof audio.webkitShowPlaybackTargetPicker === 'function';
+          this._setupRemotePlayback(audio);
+
+          if ('mediaSession' in navigator) {
+            navigator.mediaSession.setActionHandler('play',  () => { console.log('[radio] mediaSession: play action | playing:', this.playing, 'casting:', this.casting); if (!this.playing && !this.casting) this.togglePlay(); });
+            navigator.mediaSession.setActionHandler('pause', () => { console.log('[radio] mediaSession: pause action | playing:', this.playing, 'casting:', this.casting); if (this.playing && !this.casting) this.togglePlay(); });
+            navigator.mediaSession.setActionHandler('stop',  () => { console.log('[radio] mediaSession: stop action | playing:', this.playing, 'casting:', this.casting); if (this.playing && !this.casting) this.togglePlay(); });
+          }
+
+          this.$watch('view', (v) => {
+            if (v === 'library') this.$dispatch('load-library');
+            if (v === 'admin')   this.$dispatch('load-admin');
+          });
+
+          this.refresh();
+          setInterval(() => this.refresh(), 15000);
+
+          const ph = window.pushHelpers;
+          if (ph && ph.isSupported()) {
+            this.pushSupported = true;
+            this.pushNeedsInstall = ph.needsInstall();
+            ph.isSubscribed().then(v => { this.pushSubscribed = v; });
+          }
+        },
+
+        _applyHash(hash) {
+          const h = hash.replace(/^#\/?/, '');
+          const valid = ['submit', 'playing', 'library', 'admin'];
+          this.view = valid.includes(h) ? h : 'playing';
+        },
+
+        _setupAudioListeners(el) {
+          el.addEventListener('play', () => {
+            console.log('[radio] event: play | everPlayed:', this.everPlayed, 'playing:', this.playing, '| el is current:', el === this._audio);
+            this.everPlayed = true;
+          });
+          el.addEventListener('playing', () => {
+            console.log('[radio] event: playing | playing:', this.playing, 'loading:', this.loading, 'remote.state:', el.remote?.state, '| el is current:', el === this._audio);
+            this.playing = true;
+            this.loading = false;
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+          });
+          el.addEventListener('waiting', () => {
+            console.log('[radio] event: waiting | playing:', this.playing, 'loading:', this.loading, '| el is current:', el === this._audio);
+            this.loading = true;
+          });
+          el.addEventListener('pause', () => {
+            console.log('[radio] event: pause | playing:', this.playing, 'remote.state:', el.remote?.state, '| el is current:', el === this._audio);
+            this.playing = false;
+            this.loading = false;
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+          });
+          el.addEventListener('error', () => {
+            console.error('[radio] event: error | code:', el.error?.code, 'message:', el.error?.message, 'src:', el.src, '| el is current:', el === this._audio);
+            this.playing = false;
+            this.loading = false;
+          });
+        },
+
+        _setupRemotePlayback(el) {
+          if (!('remote' in el)) {
+            console.log('[radio] Remote Playback API not available on this element');
+            return;
+          }
+          console.log('[radio] _setupRemotePlayback: attaching listeners to new element');
+          el.remote.watchAvailability((available) => {
+            const isCurrent = el === this._audio;
+            console.log('[radio] castAvailable changed to:', available, '| el is current:', isCurrent);
+            if (isCurrent) this.castAvailable = available;
+          }).catch((e) => { console.log('[radio] watchAvailability rejected:', e); });
+
+          el.remote.addEventListener('connect', () => {
+            const isCurrent = el === this._audio;
+            console.log('[radio] remote: connect | state:', el.remote.state, '| audio.paused:', el.paused, 'readyState:', el.readyState, '| el is current:', isCurrent);
+            if (isCurrent) this.casting = true;
+          });
+
+          el.remote.addEventListener('disconnect', () => {
+            const isCurrent = el === this._audio;
+            console.log('[radio] remote: disconnect | state:', el.remote.state, 'playing:', this.playing, 'readyState:', el.readyState, '| el is current:', isCurrent);
+            if (!isCurrent) {
+              console.log('[radio] remote: disconnect on stale element — ignoring');
+              return;
+            }
+            this.casting = false;
+            this.castMsg = '';
+            this.playing = false;
+            this.loading = false;
+            // audio.load() per spec should reset the remote session, but Chrome doesn't
+            // honour it — prompt() still rejects immediately on the same element instance.
+            // The only reliable fix is replacing the DOM element entirely: a fresh
+            // HTMLMediaElement has no remote session history, so prompt() works again.
+            console.log('[radio] remote: disconnect — replacing <audio> element to clear Chrome remote session block');
+            this._replaceAudioElement(el);
+          });
+        },
+
+        _replaceAudioElement(oldEl) {
+          if (oldEl !== this._audio) {
+            console.log('[radio] _replaceAudioElement: guard fired — oldEl is stale, skipping');
+            return;
+          }
+          console.log('[radio] _replaceAudioElement: creating new <audio> element');
+          const newEl = document.createElement('audio');
+          newEl.preload = 'auto';
+          newEl.volume = this.volume;
+          const src = this.publicStreamUrl || this.streamUrl;
+          newEl.src = src;
+          console.log('[radio] _replaceAudioElement: new element — src:', src, 'volume:', newEl.volume, 'Remote API available:', 'remote' in newEl);
+          oldEl.parentNode.replaceChild(newEl, oldEl);
+          this._audio = newEl;
+          this.castAvailable = false; // watchAvailability not yet set up on newEl
+          this._setupAudioListeners(newEl);
+          this._setupRemotePlayback(newEl);
+          console.log('[radio] _replaceAudioElement: complete — new element is ready for casting');
+        },
+
+        togglePlay() {
+          console.log('[radio] togglePlay — playing:', this.playing, 'loading:', this.loading, 'everPlayed:', this.everPlayed, 'streamUrl:', this.streamUrl, 'publicStreamUrl:', this.publicStreamUrl);
+          const audio = this._audio;
+          console.log('[radio] audio.src:', audio.src, 'readyState:', audio.readyState, 'paused:', audio.paused, 'networkState:', audio.networkState);
+          if (this.playing) {
+            console.log('[radio] calling audio.pause()');
+            audio.pause();
+          } else {
+            this.loading = true;
+            if (this.everPlayed) {
+              const newSrc = (this.publicStreamUrl || this.streamUrl) + '?t=' + Date.now();
+              console.log('[radio] (resume) setting audio.src to:', newSrc);
+              audio.src = newSrc;
+            } else {
+              console.log('[radio] (first play) keeping existing audio.src:', audio.src);
+            }
+            console.log('[radio] calling audio.play()');
+            audio.play()
+              .then(() => { console.log('[radio] audio.play() resolved'); })
+              .catch((e) => { console.error('[radio] audio.play() rejected:', e.name, e.message); this.loading = false; });
+          }
+        },
+
+        setVolume() {
+          this._audio.volume = this.volume;
+        },
+
+        airPlay() {
+          this._audio.webkitShowPlaybackTargetPicker();
+        },
+
+        async cast() {
+          const audio = this._audio;
+          // Use remote.state as authoritative fallback — this.casting may lag if a
+          // transient disconnect+connect fired and we missed the connect event.
+          const activelyCasting = this.casting || (audio.remote && audio.remote.state === 'connected');
+          console.log('[radio] cast() — casting:', this.casting, 'remote.state:', audio.remote?.state, 'activelyCasting:', activelyCasting, 'playing:', this.playing, 'publicStreamUrl:', this.publicStreamUrl);
+
+          if (activelyCasting) {
+            // Already casting — prompt() shows the "Stop Casting" option in Chrome Android.
+            // Resolves if user disconnects (disconnect event handles cleanup),
+            // rejects (NotAllowedError) if user dismisses without stopping.
+            console.log('[radio] cast: already casting — calling prompt() to show manage/stop UI');
+            try {
+              await audio.remote.prompt();
+              console.log('[radio] cast: prompt() resolved while casting (user stopped cast)');
+            } catch (e) {
+              console.log('[radio] cast: prompt() rejected while casting:', e.name, e.message);
+              this.castMsg = 'Use Google Home or the cast notification to stop casting.';
+              setTimeout(() => { this.castMsg = ''; }, 5000);
+            }
+            return;
+          }
+
+          if (!this.publicStreamUrl) {
+            console.log('[radio] cast: no publicStreamUrl — calling prompt() directly');
+            audio.remote.prompt().catch((e) => { console.log('[radio] cast: prompt() rejected (no public URL):', e.name); });
+            return;
+          }
+
+          const wasPlaying = this.playing;
+          const castSrc = this.publicStreamUrl + '?t=' + Date.now();
+          console.log('[radio] cast: switching src to castSrc, wasPlaying:', wasPlaying, 'castSrc:', castSrc);
+          audio.src = castSrc;
+          // Always call play() before prompt() — Chrome transfers the audio element's
+          // current playback state to the remote device. If the element is paused/idle,
+          // the cast device receives silence. play() ensures Chrome has an active stream
+          // to hand off, regardless of whether the user was already playing locally.
+          audio.play()
+            .then(() => { console.log('[radio] cast: audio.play() resolved | paused:', audio.paused, 'readyState:', audio.readyState); })
+            .catch((e) => { console.warn('[radio] cast: audio.play() rejected:', e.name, e.message, '| paused:', audio.paused); });
+          console.log('[radio] cast: state before prompt() | paused:', audio.paused, 'readyState:', audio.readyState, 'networkState:', audio.networkState, 'remote.state:', audio.remote?.state);
+          try {
+            console.log('[radio] cast: calling prompt()');
+            await audio.remote.prompt();
+            console.log('[radio] cast: prompt() resolved — connect event will set casting=true');
+          } catch (e) {
+            console.log('[radio] cast: prompt() rejected (user cancelled):', e.name, e.message);
+            // User cancelled picker — restore prior local state
+            this.casting = false;
+            if (wasPlaying) {
+              audio.src = (this.publicStreamUrl || this.streamUrl) + '?t=' + Date.now();
+              audio.play().catch(() => {});
+            } else {
+              audio.pause();
+            }
+          }
+        },
+
+        async refresh() {
+          try {
+            const res = await fetch('/api/status');
+            const data = await res.json();
+            this.nowPlaying = data.now_playing;
+            this.recent = data.recent;
+            this.pendingCount = data.pending_count;
+            this.loaded = true;
+            if (data.public_stream_url) {
+              const tokenUrl = location.protocol + '//' + location.hostname + data.public_stream_url;
+              localStorage.setItem('radioPublicStreamUrl', tokenUrl);
+              if (!this.publicStreamUrl) {
+                this.publicStreamUrl = tokenUrl;
+                this.streamUrl = tokenUrl;
+              }
+            } else {
+              localStorage.removeItem('radioPublicStreamUrl');
+            }
+            if ('mediaSession' in navigator && this.nowPlaying) {
+              navigator.mediaSession.metadata = new MediaMetadata({
+                title: this.nowPlaying.title,
+                artist: this.nowPlaying.artist,
+                artwork: [
+                  { src: location.origin + '/static/icon-192.png', sizes: '192x192', type: 'image/png' },
+                  { src: location.origin + '/static/icon-512.png', sizes: '512x512', type: 'image/png' },
+                ],
+              });
+            }
+          } catch (e) {
+            console.error('Status fetch failed', e);
+          }
+        },
+
+        async togglePush() {
+          this.pushBusy = true;
+          this.pushError = '';
+          try {
+            if (this.pushSubscribed) {
+              await window.pushHelpers.unsubscribe();
+              this.pushSubscribed = false;
+            } else {
+              await window.pushHelpers.subscribe();
+              this.pushSubscribed = true;
+            }
+          } catch (e) {
+            this.pushError = e.message || 'Something went wrong. Please try again.';
+          } finally {
+            this.pushBusy = false;
+          }
+        },
+
+        timeAgo(isoStr) {
+          const diff = (Date.now() - new Date(isoStr)) / 1000;
+          if (diff < 60) return 'just now';
+          if (diff < 3600) return Math.round(diff / 60) + 'm ago';
+          if (diff < 86400) return Math.round(diff / 3600) + 'h ago';
+          return Math.round(diff / 86400) + 'd ago';
+        },
+      };
+    }
+
+    function submitView() {
       return {
         tab: 'file',
         submitter: '',
@@ -148,7 +732,7 @@
         submitAnyway: false,
         _dupCheckTimer: null,
 
-        init() {
+        initSubmit() {
           fetch('/api/submitters')
             .then(r => r.json())
             .then(data => { this.submitterNames = data.submitters; })
@@ -191,17 +775,17 @@
                   if (meta.title) params.set('title', meta.title);
                   if (meta.author_name) params.set('artist', meta.author_name);
                 }
-              } catch { /* oEmbed unavailable for this video */ }
+              } catch { /* oEmbed unavailable */ }
             }
           }
           if (this.title) params.set('title', this.title);
           if (this.artist) params.set('artist', this.artist);
           if (!params.toString()) return;
           try {
-            const res = await fetch(`/api/check-duplicate?${params}`);
+            const res = await fetch('/api/check-duplicate?' + params);
             const data = await res.json();
             this.duplicates = data.matches;
-          } catch { /* ignore network errors during check */ }
+          } catch { /* ignore */ }
           this.duplicateChecked = true;
         },
 
@@ -215,17 +799,13 @@
             return;
           }
 
-          // If the debounce hasn't fired yet or the fetch hasn't returned, run the check now
           if (!this.duplicateChecked) {
             clearTimeout(this._dupCheckTimer);
             this._dupCheckTimer = null;
             await this.checkDuplicate();
           }
 
-          if (this.duplicates.length > 0 && !this.submitAnyway) {
-            // Warning UI is shown via x-show — don't proceed
-            return;
-          }
+          if (this.duplicates.length > 0 && !this.submitAnyway) return;
 
           this.submitting = true;
           const fd = new FormData();
@@ -276,7 +856,7 @@
         startPolling(trackId) {
           this.pollInterval = setInterval(async () => {
             try {
-              const res = await fetch(`/api/track/${trackId}`);
+              const res = await fetch('/api/track/' + trackId);
               const data = await res.json();
               this.pollStatus = data.status;
               this.submittedTitle = data.title;
@@ -287,11 +867,192 @@
                   this.warning = 'Processing failed: ' + data.error_msg;
                 }
               }
-            } catch (e) {
-              // ignore transient errors during polling
-            }
+            } catch (e) { /* ignore transient errors */ }
           }, 5000);
-        }
+        },
+      };
+    }
+
+    function libraryView() {
+      return {
+        tracks: [],
+        loading: false,
+        _loaded: false,
+
+        get bySubmitter() {
+          const groups = {};
+          for (const t of this.tracks) {
+            if (!groups[t.submitter]) groups[t.submitter] = [];
+            groups[t.submitter].push(t);
+          }
+          return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+        },
+
+        async loadTracks() {
+          if (this._loaded) return;
+          this._loaded = true;
+          this.loading = true;
+          try {
+            const res = await fetch('/api/public-library');
+            const data = await res.json();
+            this.tracks = data.tracks;
+          } catch { /* ignore */ }
+          this.loading = false;
+        },
+
+        formatDate(iso) {
+          return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        },
+      };
+    }
+
+    function adminView() {
+      return {
+        authed: false,
+        tokenInput: localStorage.getItem('adminToken') || '',
+        authError: '',
+        config: {},
+        tracks: [],
+        cookieStatus: null,
+        successMsg: '',
+        errorMsg: '',
+        pollTimer: null,
+        _loaded: false,
+
+        async loadAdmin() {
+          if (this._loaded) return;
+          this._loaded = true;
+          if (this.tokenInput) {
+            await this.login();
+          }
+        },
+
+        async login() {
+          this.authError = '';
+          try {
+            const res = await this.apiGet('/api/admin/config');
+            if (res.ok) {
+              this.config = await res.json();
+              this.authed = true;
+              localStorage.setItem('adminToken', this.tokenInput);
+              await this.loadLibrary();
+              await this.loadCookieStatus();
+            } else {
+              this.authError = 'Invalid token.';
+              localStorage.removeItem('adminToken');
+            }
+          } catch (e) {
+            this.authError = 'Connection error.';
+          }
+        },
+
+        async loadLibrary() {
+          const res = await fetch('/api/library');
+          const data = await res.json();
+          this.tracks = data.tracks;
+          this.managePoll();
+        },
+
+        managePoll() {
+          const hasPending = this.tracks.some(t => t.status === 'pending');
+          if (hasPending && !this.pollTimer) {
+            this.pollTimer = setInterval(async () => { await this.loadLibrary(); }, 5000);
+          } else if (!hasPending && this.pollTimer) {
+            clearInterval(this.pollTimer);
+            this.pollTimer = null;
+          }
+        },
+
+        async setMode(mode) {
+          const res = await this.apiPost('/api/admin/config', { programming_mode: mode });
+          if (res.ok) {
+            this.config.programming_mode = mode;
+            this.flash('success', 'Mode set to ' + mode);
+          } else {
+            this.flash('error', 'Failed to update mode.');
+          }
+        },
+
+        async setBlockSize(val) {
+          const n = parseInt(val);
+          if (isNaN(n) || n < 1 || n > 20) return;
+          const res = await this.apiPost('/api/admin/config', { rotation_tracks_per_block: n });
+          if (res.ok) {
+            this.config.rotation_tracks_per_block = n;
+            this.flash('success', 'Block size set to ' + n);
+          }
+        },
+
+        async skip() {
+          const res = await this.apiPost('/api/admin/skip', {});
+          if (res.ok) {
+            this.flash('success', 'Skip requested — next track incoming.');
+          } else {
+            this.flash('error', 'Failed to skip.');
+          }
+        },
+
+        async loadCookieStatus() {
+          const res = await this.apiGet('/api/admin/youtube-cookies/status');
+          if (res.ok) this.cookieStatus = await res.json();
+        },
+
+        async uploadCookies() {
+          const file = this.$refs.cookieFile.files[0];
+          if (!file) { this.flash('error', 'Select a cookies.txt file first.'); return; }
+          const form = new FormData();
+          form.append('file', file);
+          const res = await fetch('/api/admin/youtube-cookies', {
+            method: 'POST',
+            headers: { 'X-Admin-Token': this.tokenInput },
+            body: form,
+          });
+          if (res.ok) {
+            this.flash('success', 'Cookies uploaded.');
+            await this.loadCookieStatus();
+          } else {
+            this.flash('error', 'Upload failed.');
+          }
+        },
+
+        async deleteTrack(id) {
+          if (!confirm('Delete this track from the library?')) return;
+          const res = await this.apiFetch('DELETE', '/api/admin/track/' + id);
+          if (res.ok) {
+            this.tracks = this.tracks.filter(t => t.id !== id);
+            this.flash('success', 'Track deleted.');
+          } else {
+            this.flash('error', 'Failed to delete track.');
+          }
+        },
+
+        apiGet(url) {
+          return fetch(url, { headers: { 'X-Admin-Token': this.tokenInput } });
+        },
+
+        apiPost(url, body) {
+          return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Admin-Token': this.tokenInput },
+            body: JSON.stringify(body),
+          });
+        },
+
+        apiFetch(method, url) {
+          return fetch(url, { method, headers: { 'X-Admin-Token': this.tokenInput } });
+        },
+
+        flash(type, msg) {
+          this[type === 'success' ? 'successMsg' : 'errorMsg'] = msg;
+          setTimeout(() => { this.successMsg = ''; this.errorMsg = ''; }, 4000);
+        },
+
+        formatDuration(s) {
+          if (!s) return '';
+          const m = Math.floor(s / 60);
+          const sec = Math.round(s % 60).toString().padStart(2, '0');
+          return m + ':' + sec;
+        },
       };
     }
   </script>

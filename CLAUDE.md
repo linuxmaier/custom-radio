@@ -81,30 +81,40 @@ The script at `liquidsoap/radio.liq` targets **Liquidsoap 2.3.0** (`savonet/liqu
 - **`savonet/liquidsoap` image entrypoint**: the image ENTRYPOINT is `/usr/bin/tini -- /usr/bin/liquidsoap`. Any CMD args are passed directly to liquidsoap, not to a shell. Use `--entrypoint sh` when you need to run shell commands inside the container.
 - **`settings.request.metadata_decoders`**: do NOT set this. The default (TagLib) correctly reads ID3v2 tags including `comment`. Setting it to `["FFMPEG"]` silently fails ("Cannot find decoder FFMPEG") and leaves metadata unread, breaking `source.on_metadata` track ID lookups.
 
-## Frontend Player Notes
+## Frontend Notes (SPA)
 
-The web player in `frontend/playing.html` embeds an `<audio>` element pointed at the stream proxied through nginx at `hostname/stream` (Icecast port 8000 is closed in the AWS Security Group). VLC URL format: `https://family:passphrase@domain/stream`. Key behaviours to be aware of:
+The frontend is a single-page app (`frontend/index.html`) using Alpine.js v3 with hash-based routing (`/#submit`, `/#playing`, `/#library`, `/#admin`). Default route (empty hash or `/`) → Now Playing view. No page reloads occur during navigation.
 
-- **Resume always reconnects to live**: pausing buffers the stream in the browser, but we deliberately discard that buffer on resume by reassigning `audio.src` with a cache-busting timestamp. The player has no "resume from where you left off" — Pause and Resume from Live are the only states. This is intentional; behind-live tracking was removed as it doesn't survive page navigation.
-- **The `pause` event fires for buffering stalls too**: browsers fire `pause` when buffering stalls as well as on user-initiated pauses. This means sessionStorage may briefly show `paused: true` during a stall before `play` fires again — this is harmless.
-- **Player state in sessionStorage**: `radioState` key holds `{ active: boolean, paused: boolean }`. Written by `playing.html` on play/pause events; read by the nav mini-player to decide whether to auto-resume on page navigation.
+**Alpine.js structure:**
+- `shell()` — top-level `x-data` on `<body>`: routing (`view` + `hashchange`), persistent `<audio>` element (`this._audio`), all player state, status polling, media session, AirPlay, cast
+- `submitView()`, `libraryView()`, `adminView()` — nested `x-data`; inherit parent scope so they can read `nowPlaying`, `playing`, etc.
+- Library and admin views are lazy-loaded: `shell.init()` watches `view` and dispatches `load-library` / `load-admin` window events on first navigation to those views
 
-## Frontend Mini-Player Notes
+**Key player behaviours:**
+- **Resume always reconnects to live**: resume deliberately discards the buffered stream by reassigning `audio.src` with a cache-busting timestamp (`?t=Date.now()`). No "resume from where you left off."
+- **The `pause` event fires for buffering stalls too**: browsers fire `pause` on stalls as well as user-initiated pauses. State briefly shows paused, then `playing` fires again — harmless.
+- **Persistent player bar**: fixed at the bottom once `everPlayed` is true. Contains play/pause, cast button, and track title (tapping navigates to `/#playing`). Volume slider is Now Playing view only.
+- **VLC URL format**: `https://family:passphrase@domain/stream`
 
-The mini-player is injected by `nav.js` into all pages except `/playing.html`. It reads `sessionStorage.radioState` on load and only appears if `active: true`. Auto-resume behavior differs by context:
+## Chrome Remote Playback API (Casting)
 
-- **Installed PWA (standalone mode)**: `play()` succeeds on page navigation — Chrome Android grants autoplay to installed apps. The mini-player auto-resumes seamlessly.
-- **Desktop browsers (Firefox, Chrome, etc.)**: browsers block unmuted autoplay on new page loads even within the same origin. `play()` is called but rejected; the `catch` resets to a paused ▶ state. The user must click the play button once to resume. This is expected and accepted behaviour.
+The cast button uses the Remote Playback API (`audio.remote.prompt()`). Key sharp edges:
 
-The `userPaused` flag (in both `playing.html` and the nav.js mini-player) gates the `paused: true` sessionStorage write so that browser-triggered `pause` events during page unload do not mark the session as paused. Without this, desktop browsers that DO fire `pause` on navigation (Chrome desktop) would overwrite sessionStorage and the mini-player would never attempt auto-resume.
+- **`audio.play()` must precede `prompt()`**: Chrome transfers the audio element's current playback *state* to the cast device. If the element is paused/idle when `prompt()` is called, the cast device receives silence. Always call `audio.play()` before `audio.remote.prompt()`.
 
-On Firefox, bfcache behaviour means `pause` may not fire at all during navigation, so the flag is a no-op there — but it is still correct.
+- **Chrome permanently blocks `prompt()` after external disconnect**: if the user stops casting from Google Home or another external controller, Chrome flags that `HTMLMediaElement` instance as having a terminated remote session. All subsequent `prompt()` calls on that same element immediately reject with `NotAllowedError: The prompt was dismissed`. This is a Chrome non-compliance — the Remote Playback spec says `audio.load()` should run the "remote playback reset algorithm" and clear this flag, but Chrome does not honour it. `audio.load()` confirms it ran (readyState drops 4→0) but `prompt()` still rejects ~10ms later.
+
+- **Fix: replace the `<audio>` DOM element after disconnect**: `shell()` stores the current element as `this._audio`. On disconnect, `_replaceAudioElement(oldEl)` creates a fresh `<audio>`, swaps it into the DOM via `parentNode.replaceChild()`, updates `this._audio`, and re-attaches all audio and remote playback listeners via `_setupAudioListeners(el)` + `_setupRemotePlayback(el)`. A new `HTMLMediaElement` has no remote session history — `prompt()` works again.
+
+- **Chrome fires `disconnect` twice** after an external stop. Guard: `_setupRemotePlayback(el)` closes over `el`; both `connect` and `disconnect` handlers check `el === this._audio` before acting. After `_replaceAudioElement`, `this._audio` points to the new element, so the second `disconnect` from the old element is a no-op.
+
+- **`castAvailable` briefly goes false after replacement**: `watchAvailability` must be re-registered on the new element. Chrome re-detects the cast device and fires the availability callback within a second or two. The cast button disappears briefly then reappears — acceptable UX.
 
 ## Frontend Admin Notes
 
-The admin library list (`frontend/admin.html`) is loaded once on login and does not auto-refresh (by design — the page is not intended to be a live dashboard). The one exception: while any track has `status='pending'`, a 5-second polling interval runs via `managePoll()` and refreshes the library until all tracks settle. `managePoll()` is called after every `loadLibrary()` and self-manages the interval (starts it when pending tracks exist, clears it when they're gone).
+The admin library list (in `adminView()` within `frontend/index.html`) is loaded once on login and does not auto-refresh (by design — not intended as a live dashboard). The one exception: while any track has `status='pending'`, a 5-second polling interval runs via `managePoll()` and refreshes the library until all tracks settle.
 
-The admin page also has a **YouTube Cookies** card that shows whether a cookies file is present (via `GET /admin/youtube-cookies/status`) and provides a file upload form (`POST /admin/youtube-cookies`). Cookie status is loaded once on login alongside the library.
+The admin view also has a **YouTube Cookies** card that shows whether a cookies file is present (via `GET /admin/youtube-cookies/status`) and provides a file upload form (`POST /admin/youtube-cookies`). Cookie status is loaded once on login alongside the library.
 
 ## Known Issues / Workarounds
 
