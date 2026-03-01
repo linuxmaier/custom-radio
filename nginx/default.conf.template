@@ -38,6 +38,12 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Drop known scanner/bot traffic silently — these paths don't exist on this
+    # server and would otherwise generate spurious 401s from auth_basic.
+    location ~* ^/(wp-admin|wordpress|\.env|\.git)(/|$) {
+        return 444;
+    }
+
     location = /ping {
         auth_basic off;
         return 200 "ok";
