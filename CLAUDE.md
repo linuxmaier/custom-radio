@@ -96,19 +96,19 @@ The frontend is a single-page app (`frontend/index.html`) using Alpine.js v3 wit
 - **Persistent player bar**: fixed at the bottom once `everPlayed` is true. Contains play/pause, cast button, and track title (tapping navigates to `/#playing`). Volume slider is Now Playing view only.
 - **VLC URL format**: `https://family:passphrase@domain/stream`
 
-## Chrome Remote Playback API (Casting)
+## Google Cast SDK (Casting)
 
-The cast button uses the Remote Playback API (`audio.remote.prompt()`). Key sharp edges:
+The cast button uses the **Google Cast SDK** (`cast_sender.js`), NOT the Remote Playback API. The SDK was chosen because the Remote Playback API proxies the stream through the local browser tab — Chrome's background tab throttling (~1 min after losing focus) paused the local `<audio>` element and immediately paused the Chromecast. The Cast SDK tells the Chromecast to connect directly to `publicStreamUrl` (the `PUBLIC_STREAM_TOKEN` route), making it fully independent of the local tab's state.
 
-- **`audio.play()` must precede `prompt()`**: Chrome transfers the audio element's current playback *state* to the cast device. If the element is paused/idle when `prompt()` is called, the cast device receives silence. Always call `audio.play()` before `audio.remote.prompt()`.
+Key implementation details:
 
-- **Chrome permanently blocks `prompt()` after external disconnect**: if the user stops casting from Google Home or another external controller, Chrome flags that `HTMLMediaElement` instance as having a terminated remote session. All subsequent `prompt()` calls on that same element immediately reject with `NotAllowedError: The prompt was dismissed`. This is a Chrome non-compliance — the Remote Playback spec says `audio.load()` should run the "remote playback reset algorithm" and clear this flag, but Chrome does not honour it. `audio.load()` confirms it ran (readyState drops 4→0) but `prompt()` still rejects ~10ms later.
+- **Dynamic loading + `__onGCastApiAvailable`**: `_loadCastSdk()` injects the SDK script and defines `window.__onGCastApiAvailable` (the SDK's required callback) before the script loads. The callback closes over `this` so it can call `this._setupCastSdk()` directly. A `window.__castSdkLoading` guard prevents double-injection — Alpine calls `init()` twice (once automatically for the `init` method on the data object, once from the `x-init="init()"` attribute on `<body>`).
 
-- **Fix: replace the `<audio>` DOM element after disconnect**: `shell()` stores the current element as `this._audio`. On disconnect, `_replaceAudioElement(oldEl)` creates a fresh `<audio>`, swaps it into the DOM via `parentNode.replaceChild()`, updates `this._audio`, and re-attaches all audio and remote playback listeners via `_setupAudioListeners(el)` + `_setupRemotePlayback(el)`. A new `HTMLMediaElement` has no remote session history — `prompt()` works again.
+- **`_setupCastSdk()`**: initialises `CastContext` with `DEFAULT_MEDIA_RECEIVER_APP_ID`. `CAST_STATE_CHANGED` drives `castAvailable` and `casting`. `SESSION_STATE_CHANGED` handles `SESSION_ENDED`: clears cast state and auto-resumes local audio by reassigning `this._audio.src` with a cache-busting timestamp and calling `play()`.
 
-- **Chrome fires `disconnect` twice** after an external stop. Guard: `_setupRemotePlayback(el)` closes over `el`; both `connect` and `disconnect` handlers check `el === this._audio` before acting. After `_replaceAudioElement`, `this._audio` points to the new element, so the second `disconnect` from the old element is a no-op.
+- **`cast()`**: calls `context.requestSession()` (shows device picker); on success calls `session.loadMedia()` with a `MediaInfo` of type `audio/mpeg`, `StreamType.LIVE`, and now-playing metadata. Pauses local audio before `loadMedia()` so there is no double audio. Tapping the cast button while already casting calls `requestSession()` again, which shows the Cast management dialog (includes "Stop Casting"). On `SESSION_ENDED` the SDK fires the event and local audio resumes automatically.
 
-- **`castAvailable` briefly goes false after replacement**: `watchAvailability` must be re-registered on the new element. Chrome re-detects the cast device and fires the availability callback within a second or two. The cast button disappears briefly then reappears — acceptable UX.
+- **After extended background time**: Chrome may lose track of the SDK session while the tab is backgrounded. If this happens, the cast button shows the "start new cast" picker rather than the management dialog — the Chromecast itself keeps playing unaffected, since it is connected directly to Icecast.
 
 ## Frontend Admin Notes
 
