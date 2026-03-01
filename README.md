@@ -9,16 +9,23 @@ Five Docker services:
 - **Icecast** — stream server; reachable only within the Docker network (port 8000 is not exposed externally)
 - **Liquidsoap** — programs the stream; asks the API for the next track and handles ICY metadata
 - **Python/FastAPI** — manages submissions, downloads, audio analysis, library, and scheduling
-- **Nginx** — reverse proxy for the web UI and audio stream; handles HTTPS and HTTP Basic Auth; proxies the stream at `/stream`
+- **Nginx** — reverse proxy for the web UI and audio stream; handles HTTPS and (optionally) HTTP Basic Auth; proxies the stream at `/stream`
 - **bgutil-provider** — local Node.js server that generates YouTube Proof of Origin (`po_token`) tokens; used by yt-dlp to pass YouTube's bot check from cloud IPs
 
 ## Quick Start
+
+### Authentication Modes
+
+The station supports two auth modes — choose one before setting up:
+
+- **Basic Auth mode** (default): The entire site is protected by a single shared HTTP Basic Auth username/password (one password for everyone). Simple but shows an ugly browser prompt and has no per-user identity.
+- **App Auth mode**: Application-level auth with per-user accounts, magic link email sign-in, and a session cookie. Requires SMTP to be configured for sending sign-in emails. Provides per-user identity (submitter name pre-populated, own-track deletion). Recommended for new deployments.
 
 ### Prerequisites
 
 - Docker and Docker Compose
 - A domain name pointed at your VPS
-- `apache2-utils` (for `htpasswd`)
+- `apache2-utils` (for `htpasswd`) — Basic Auth mode only
 
 ### Setup
 
@@ -27,8 +34,14 @@ Five Docker services:
 cp .env.example .env
 $EDITOR .env
 
-# 2. Generate the site password file
+# 2a. Basic Auth mode: generate the site password file
 htpasswd -cb nginx/.htpasswd family YOUR_PASSPHRASE
+# (The default docker-compose.yml uses nginx/default.conf.template which requires this file)
+
+# 2b. App Auth mode: swap in the noauth nginx template
+#     Edit the nginx volumes in docker-compose.yml, changing:
+#       nginx/default.conf.template → nginx/noauth.conf.template
+#     No .htpasswd file is needed. See "Bootstrap first user" below.
 
 # 3. Get a TLS certificate before starting (chicken-and-egg: nginx needs the cert to start)
 docker run --rm -p 80:80 \
@@ -39,6 +52,12 @@ docker run --rm -p 80:80 \
 
 # 4. Build and start
 docker compose up -d --build
+
+# 5. App Auth mode only: bootstrap the first admin user
+curl -X POST https://your.domain.com/api/auth/bootstrap \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com"}'
+# → Response includes a debug_url (or sends magic link email) — open it to get a sign-in code
 ```
 
 ### Verify
@@ -46,22 +65,34 @@ docker compose up -d --build
 - Icecast status (internal only): `docker exec radio-nginx-1 curl http://icecast:8000/status-json.xsl`
 - Submit a YouTube link via the web UI
 - Poll `GET /api/track/{id}` until `status: "ready"` (usually under 5 minutes)
-- Open VLC → Media → Open Network Stream → `https://family:passphrase@domain/stream`
+- Basic Auth mode: Open VLC → Media → Open Network Stream → `https://family:passphrase@domain/stream`
 
 ## Local Development
 
 `docker-compose.override.yml` is gitignored so it is never present on the server. For local development, copy the example file before running:
 
 ```bash
-# 1. Copy secrets and generate .htpasswd (same as production)
+# 1. Copy secrets
 cp .env.example .env && $EDITOR .env
-htpasswd -cb nginx/.htpasswd family YOUR_PASSPHRASE
 
 # 2. Set up the local override
 cp docker-compose.override.yml.example docker-compose.override.yml
 
-# 3. Start (no TLS needed — nginx uses the HTTP-only local config)
+# 3a. Basic Auth mode (default override): generate .htpasswd
+htpasswd -cb nginx/.htpasswd family YOUR_PASSPHRASE
+
+# 3b. App Auth mode: edit docker-compose.override.yml and change the nginx template volume:
+#     nginx/local.conf.template → nginx/local-noauth.conf.template
+#     No .htpasswd needed.
+
+# 4. Start (no TLS needed — nginx uses the HTTP-only local config)
 docker compose up --build
+
+# 5. App Auth mode only: bootstrap the first user
+curl -X POST http://localhost/api/auth/bootstrap \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com"}'
+# → Response includes debug_url (no email sent locally) — open it to get the sign-in code
 ```
 
 The override does three things: uses `nginx/local.conf.template` (HTTP on port 80, no TLS), sets `SERVER_HOSTNAME=localhost`, and exposes Icecast on port 8000 for debugging. The site is then reachable at `http://localhost`.
@@ -77,7 +108,7 @@ The frontend is a single-page app — navigation between views does not reload t
 | Library | `/#library` | All songs grouped by submitter with play counts |
 | Admin | `/#admin` | Change mode, skip track, manage library |
 
-All views are behind HTTP Basic Auth (shared family username/password from `.env`). The Admin view additionally requires an admin token sent via the `X-Admin-Token` header.
+In Basic Auth mode, all views are behind HTTP Basic Auth (shared family username/password from `.env`). In App Auth mode, users register by email and sign in via a magic link + claim code flow — no shared password is needed. The Admin view additionally requires an admin token sent via the `X-Admin-Token` header.
 
 ### Player bar
 
@@ -108,7 +139,20 @@ All public endpoints are proxied through nginx at `/api/`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/submit` | Submit a track (multipart form); optional `comment` field (max 80 chars) shown on the Now Playing page and in push notifications |
+| `POST` | `/api/auth/request-access` | Request access or send magic link (App Auth mode) |
+| `GET` | `/api/auth/verify` | Validate magic link token → show 6-digit claim code page (App Auth mode) |
+| `POST` | `/api/auth/claim` | Exchange claim code for session cookie (App Auth mode) |
+| `POST` | `/api/auth/logout` | Clear session cookie (App Auth mode) |
+| `POST` | `/api/auth/bootstrap` | Create first user (returns 403 once any user exists) (App Auth mode) |
+| `GET` | `/api/auth/me` | Current user info (session-required) |
+| `PATCH` | `/api/auth/me` | Update display name (session-required) |
+| `GET` | `/api/auth/users` | List all users (admin token required) |
+| `POST` | `/api/auth/users` | Create pre-approved user (admin token required) |
+| `POST` | `/api/auth/users/{id}/approve` | Approve a pending user + send welcome magic link (admin token required) |
+| `POST` | `/api/auth/users/{id}/reject` | Reject a pending user (admin token required) |
+| `DELETE` | `/api/auth/users/{id}` | Delete a user and all their sessions (admin token required) |
+| `POST` | `/api/submit` | Submit a track (multipart form); optional `comment` field (max 280 chars) shown on the Now Playing page and in push notifications |
+| `DELETE` | `/api/track/{id}` | Delete own track (session-required in App Auth mode) |
 | `GET` | `/api/status` | Now playing + recent 10 tracks + pending count + `station_name` + `public_stream_url` (if `PUBLIC_STREAM_TOKEN` is set) |
 | `GET` | `/api/public-library` | Ready tracks with play counts, grouped by submitter |
 | `GET` | `/api/library` | All tracks with status (admin use) |
@@ -116,8 +160,8 @@ All public endpoints are proxied through nginx at `/api/`.
 | `GET` | `/api/check-duplicate` | Fuzzy duplicate check by `title`, `artist`, and/or `video_id` |
 | `GET` | `/api/manifest.json` | PWA Web App Manifest (station name from `STATION_NAME` env var) |
 | `GET` | `/api/push/vapid-key` | VAPID public key for push subscription |
-| `POST` | `/api/push/subscribe` | Register a push subscription |
-| `POST` | `/api/push/unsubscribe` | Remove a push subscription |
+| `POST` | `/api/push/subscribe` | Register a push subscription (session-required in App Auth mode) |
+| `POST` | `/api/push/unsubscribe` | Remove a push subscription (session-required in App Auth mode) |
 | `GET` | `/api/admin/config` | Get current config (admin token required) |
 | `POST` | `/api/admin/config` | Update programming mode / block size |
 | `POST` | `/api/admin/skip` | Skip the current track |
@@ -140,8 +184,8 @@ See `.env.example` for the full list:
 | `ICECAST_ADMIN_PASSWORD` | Icecast web admin password |
 | `ICECAST_RELAY_PASSWORD` | Icecast relay password |
 | `ADMIN_TOKEN` | Token for admin API endpoints (sent via `X-Admin-Token` header) |
-| `SITE_USER` | HTTP Basic Auth username (default: `family`) |
-| `SITE_PASSPHRASE` | HTTP Basic Auth password |
+| `SITE_USER` | HTTP Basic Auth username (default: `family`) — Basic Auth mode only |
+| `SITE_PASSPHRASE` | HTTP Basic Auth password — Basic Auth mode only |
 | `BACKUP_DEST` | Backup destination (e.g. `s3://your-bucket`); leave unset to disable backups |
 | `BACKUP_ENDPOINT_URL` | S3-compatible endpoint URL (optional; for non-AWS providers) |
 | `SMTP_HOST` | SMTP server hostname for alert emails (e.g. `email-smtp.us-east-1.amazonaws.com`); leave unset to disable alerts |
@@ -297,8 +341,10 @@ family-radio/
 ├── docker-compose.yml
 ├── .env.example
 ├── nginx/
-│   ├── default.conf.template   # production (HTTPS)
-│   └── local.conf.template     # local dev (HTTP only)
+│   ├── default.conf.template        # production (HTTPS + Basic Auth)
+│   ├── local.conf.template          # local dev (HTTP + Basic Auth)
+│   ├── noauth.conf.template         # production (HTTPS + App Auth, no Basic Auth)
+│   └── local-noauth.conf.template   # local dev (HTTP + App Auth, no Basic Auth)
 ├── icecast/
 │   └── icecast.xml
 ├── liquidsoap/
@@ -317,7 +363,9 @@ family-radio/
 │   ├── audio.py
 │   ├── downloader.py
 │   ├── push.py             # Web Push: send_push_to_all(); no-op if VAPID unset
+│   ├── email_utils.py      # Generic send_email() helper (used by auth for magic links)
 │   └── routers/
+│       ├── auth.py         # /auth/* — magic link, claim codes, session cookies, user management
 │       ├── submit.py
 │       ├── internal.py
 │       ├── admin.py

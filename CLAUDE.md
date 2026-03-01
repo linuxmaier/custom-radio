@@ -19,8 +19,12 @@ api/          Python/FastAPI backend (runs inside Docker)
 frontend/     Static HTML/JS/CSS (served by nginx)
 liquidsoap/   Liquidsoap script + Dockerfile
 icecast/      icecast.xml config
-nginx/        nginx template configs (default.conf.template = production HTTPS,
-              local.conf.template = local HTTP only) + .htpasswd (gitignored)
+nginx/        nginx template configs:
+                default.conf.template     = production HTTPS + Basic Auth
+                local.conf.template       = local HTTP-only + Basic Auth
+                noauth.conf.template      = production HTTPS, no Basic Auth (App Auth mode)
+                local-noauth.conf.template = local HTTP-only, no Basic Auth (App Auth mode)
+              .htpasswd (gitignored — Basic Auth mode only)
 certbot/      Dockerfile extending certbot/certbot with docker-cli + reload-nginx.sh script
               (reload-nginx.sh finds the nginx container by its family-radio.service=nginx Docker
               label and sends nginx -s reload; called by the certbot --deploy-hook after renewal)
@@ -32,7 +36,8 @@ The `bgutil-provider` service uses the upstream `brainicism/bgutil-ytdlp-pot-pro
 ## API Layout
 
 Routers in `api/routers/`:
-- `submit.py`   — POST /submit, GET /check-duplicate, GET /submitters
+- `auth.py`     — POST /auth/request-access, GET /auth/verify, POST /auth/claim, POST /auth/logout, POST /auth/bootstrap, GET/PATCH /auth/me, GET/POST /auth/users, POST /auth/users/{id}/approve|reject, DELETE /auth/users/{id}
+- `submit.py`   — POST /submit, GET /check-duplicate, GET /submitters, DELETE /track/{id} (own-track deletion)
 - `internal.py` — GET /internal/next-track (returns annotate URI with title/artist from DB), POST /internal/track-started/{id}
 - `admin.py`    — GET/POST /admin/config, POST /admin/skip, DELETE /admin/track/{id}, GET /admin/youtube-cookies/status, POST /admin/youtube-cookies
 - `status.py`   — GET /status (returns now_playing, recent, pending_count, station_name, public_stream_url), GET /library, GET /public-library, GET /track/{id}
@@ -40,13 +45,19 @@ Routers in `api/routers/`:
 
 All public routes go through nginx at `/api/`. Internal routes are Docker-network-only (blocked by nginx).
 
-Admin endpoints are authenticated via the `X-Admin-Token` request header (value = `ADMIN_TOKEN` env var, no "Bearer" prefix). A custom header is used instead of `Authorization` because nginx's `auth_basic` consumes the `Authorization` header for site-wide HTTP Basic Auth, which would prevent the Bearer token from ever reaching the API.
+User endpoints (all routes except `/auth/request-access`, `/auth/verify`, `/auth/claim`, `/auth/bootstrap`, and `/push/vapid-key`) require a valid session cookie via `require_user` (FastAPI `Depends`). The dependency reads the `session` cookie, hashes it, joins `sessions` + `users`, checks expiry, slides the session TTL, and returns `{id, email, name, status}`. 401 is raised for missing/invalid/expired sessions.
+
+Admin endpoints are authenticated via the `X-Admin-Token` request header (value = `ADMIN_TOKEN` env var, no "Bearer" prefix). A custom header is used instead of `Authorization` because in Basic Auth mode nginx's `auth_basic` consumes the `Authorization` header, which would prevent Bearer tokens from reaching the API. In App Auth mode there is no `auth_basic`, but the X-Admin-Token pattern is kept for consistency.
+
+`IS_LOCAL = os.environ.get("SERVER_HOSTNAME", "localhost") in ("localhost", "")` — when True, auth endpoints include `debug_url` and `debug_token` in responses instead of sending email (no SMTP needed for local dev).
 
 **Skip mechanism**: POST /admin/skip connects to the Liquidsoap telnet server (`liquidsoap:1234`) and sends `dynamic.flush_and_skip`. This immediately stops the current track and fetches a fresh next track. The telnet server is enabled in `radio.liq` with `settings.server.telnet.set(true)` and bound to `0.0.0.0` so it's reachable from the API container. Do not use `icecast_out.skip` — it operates at the output layer and does not reliably interrupt the audio stream.
 
 ## Database
 
-SQLite at `/data/radio.db` (Docker volume). Schema initialised in `database.py:init_db()`. Tables: `tracks`, `play_log`, `jobs`, `config`, `push_subscriptions`.
+SQLite at `/data/radio.db` (Docker volume). Schema initialised in `database.py:init_db()`. Tables: `tracks`, `play_log`, `jobs`, `config`, `push_subscriptions`, `users`, `auth_tokens`, `claim_codes`, `sessions`.
+
+Auth tables added in Phase 1 per-user auth: `users` (email, name, status: pending/approved/rejected), `auth_tokens` (magic link tokens; 15-min TTL, single-use), `claim_codes` (6-digit bridge codes for cross-browser PWA cookie scoping; 5-min TTL, single-use), `sessions` (httpOnly cookie sessions; 30-day sliding TTL). All token/code values are stored as SHA-256 hashes. Foreign keys with ON DELETE CASCADE propagate user deletion to all auth rows. `tracks.user_id` and `push_subscriptions.user_id` are nullable FK references to `users.id` (added via ALTER migration).
 
 Config keys: `programming_mode`, `rotation_tracks_per_block`, `rotation_current_submitter_idx`, `rotation_block_start_log_id`, `last_returned_track_id`, `feature_min/max_*` (4 audio features).
 
@@ -86,9 +97,24 @@ The script at `liquidsoap/radio.liq` targets **Liquidsoap 2.3.0** (`savonet/liqu
 The frontend is a single-page app (`frontend/index.html`) using Alpine.js v3 with hash-based routing (`/#submit`, `/#playing`, `/#library`, `/#admin`). Default route (empty hash or `/`) → Now Playing view. No page reloads occur during navigation.
 
 **Alpine.js structure:**
-- `shell()` — top-level `x-data` on `<body>`: routing (`view` + `hashchange`), persistent `<audio>` element (`this._audio`), all player state, status polling, media session, AirPlay, cast
+- `shell()` — top-level `x-data` on `<body>`: routing (`view` + `hashchange`), persistent `<audio>` element (`this._audio`), all player state, status polling, media session, AirPlay, cast, auth state
 - `submitView()`, `libraryView()`, `adminView()` — nested `x-data`; inherit parent scope so they can read `nowPlaying`, `playing`, etc.
 - Library and admin views are lazy-loaded: `shell.init()` watches `view` and dispatches `load-library` / `load-admin` window events on first navigation to those views
+
+**Auth state in `shell()`:**
+- `user` — `{id, email, name}` or `null`; `authChecked` — `false` until `GET /api/auth/me` resolves (prevents flash of unauthed content)
+- `loginState` — `'email'` | `'pending'` | `'code'`; `loginEmail`, `loginMsg`, `loginError`, `loginBusy`, `claimCode`
+- `setupName`, `setupError`, `setupBusy` — for display-name-setup view shown on first login
+
+**Auth flow in `init()`:**
+- `init()` is `async`; `_initRunning` guard at the top prevents double-execution (Alpine calls `init()` twice: once for the `init` method on the data object, once for `x-init="init()"` on `<body>`)
+- First action: `GET /api/auth/me` — 200 → set `user`, proceed normally; 401 → set `view = 'login'`
+- `_applyHash()` forces `view = 'login'` if `!this.user`
+- `refresh()` (status poller) handles 401 by clearing `user` and setting `view = 'login'`
+
+**Views added by auth:**
+- `login` — three states: email entry → `POST /api/auth/request-access` (approved users get magic link; others see pending message); code entry → `POST /api/auth/claim` → cookie set, `needs_name` check
+- `setup` — display name input, shown after first login when `user.name === null` → `PATCH /api/auth/me`
 
 **Key player behaviours:**
 - **Resume always reconnects to live**: resume deliberately discards the buffered stream by reassigning `audio.src` with a cache-busting timestamp (`?t=Date.now()`). No "resume from where you left off."
@@ -124,8 +150,9 @@ The admin view also has a **YouTube Cookies** card that shows whether a cookies 
 - **YouTube downloads blocked on AWS**: yt-dlp gets "Sign in to confirm you're not a bot" from AWS datacenter IPs. Primary fix: the `bgutil-provider` sidecar container generates YouTube Proof of Origin (`po_token`) tokens, which satisfy YouTube's bot check. Secondary fix: cookies from a throwaway Google account can be uploaded via the admin panel (YouTube Cookies section) and stored at `/app/cookies/youtube.txt`; the `./cookies` directory is mounted into the api container at `/app/cookies` and is gitignored. With bgutil-provider running, cookies should be long-lived; without it they were invalidated within minutes from AWS IPs.
 - **YouTube cookie quality — multiple stations**: Each station uses a separate throwaway Google account and a separate cookie file. **Use separate browser profiles** (e.g. Chrome profile A for station A, profile B for station B) when generating cookies — do not sign both accounts into the same browser simultaneously. Shared browser fingerprinting cookies in a multi-account session can shorten cookie lifespan and trigger YouTube's bot detection faster. To export cookies, use the "Get cookies.txt LOCALLY" Chrome/Firefox extension (Netscape format) from within the correct profile, then upload via the admin panel.
 - **`docker-compose.override.yml` is gitignored**: local dev only (disables certbot, uses HTTP-only nginx, exposes Icecast port 8000). Copy `docker-compose.override.yml.example` to use it locally. It is not present on the production server and will not be restored by `git pull`.
-- **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}`, `${STATION_NAME}` (for `auth_basic`), and `${PUBLIC_STREAM_TOKEN}` (for the public stream URL route). The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. All three vars must be set in docker-compose.yml for nginx (`PUBLIC_STREAM_TOKEN` defaults to empty string via `${PUBLIC_STREAM_TOKEN:-}`, which disables the public stream route).
-- **nginx `auth_basic off` for PWA assets is intentional**: `/sw.js`, `/api/manifest.json`, and icon PNGs are deliberately exempted from HTTP Basic Auth in both `default.conf.template` and `local.conf.template`. Browsers and mobile OSes fetch these at the system level (not through a user session) when installing a PWA or displaying notifications — they do not carry stored Basic Auth credentials. Do not remove these exemptions. The exposed content is non-sensitive (a service worker, a manifest with the station name, and static images).
+- **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}`, `${STATION_NAME}` (for `auth_basic`), and `${PUBLIC_STREAM_TOKEN}` (for the public stream URL route). The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. All three vars must be set in docker-compose.yml for nginx (`PUBLIC_STREAM_TOKEN` defaults to empty string via `${PUBLIC_STREAM_TOKEN:-}`, which disables the public stream route). The `noauth` templates (`noauth.conf.template`, `local-noauth.conf.template`) do not use `${STATION_NAME}` (no `auth_basic` directive), but still need `${SERVER_HOSTNAME}` and `${PUBLIC_STREAM_TOKEN}`.
+- **Two nginx auth modes**: Basic Auth mode uses `default.conf.template` (production) or `local.conf.template` (local) — site-wide HTTP Basic Auth prompt. App Auth mode uses `noauth.conf.template` (production) or `local-noauth.conf.template` (local) — no Basic Auth prompt; all auth is handled by the API session cookie. To switch modes, change the volume mount in `docker-compose.yml` (and override file for local) to point to the desired template. App Auth mode requires the database to have at least one approved user (see bootstrap step).
+- **nginx `auth_basic off` for PWA assets is intentional**: `/sw.js`, `/api/manifest.json`, and icon PNGs are deliberately exempted from HTTP Basic Auth in both `default.conf.template` and `local.conf.template`. Browsers and mobile OSes fetch these at the system level (not through a user session) when installing a PWA or displaying notifications — they do not carry stored Basic Auth credentials. Do not remove these exemptions. The exposed content is non-sensitive (a service worker, a manifest with the station name, and static images). The `noauth` templates have no `auth_basic` at all, so no exemptions are needed there.
 
 - **`file.filename` is a string, not a bool**: In `api/routers/submit.py`, `has_file = file is not None and file.filename` evaluates to the filename string when a file is provided. Always wrap in `bool()` before using in arithmetic (e.g. `sum()`), otherwise a `TypeError: unsupported operand type(s) for +: 'int' and 'str'` will be raised.
 - **API container needs at least 1g mem_limit**: librosa feature extraction is memory-intensive and will cause an OOM kill if the API container is constrained to 600m. The `mem_limit` in `docker-compose.yml` is set to `1g` — do not lower it. OOM kills leave jobs in `processing` state (handled by `reset_stuck_jobs()` on next startup, but the track has to be fully reprocessed).
@@ -133,7 +160,7 @@ The admin view also has a **YouTube Cookies** card that shows whether a cookies 
 ## Secrets and Gitignored Files
 
 - `.env` — never commit; `.env.example` is the template
-- `nginx/.htpasswd` — generated locally with `htpasswd -cb nginx/.htpasswd family PASSPHRASE`
+- `nginx/.htpasswd` — generated locally with `htpasswd -cb nginx/.htpasswd family PASSPHRASE`; only needed in Basic Auth mode (not App Auth / noauth template mode)
 - `cookies/` — YouTube session cookies (Google account credentials); upload via admin panel, never commit
 
 ## GitHub CLI Tips
@@ -160,7 +187,7 @@ PR descriptions must include:
 ## Development Tips
 
 - **Local full-stack**: `docker compose up --build` — `docker-compose.override.yml` is automatically applied and handles local differences (HTTP-only nginx, certbot disabled, `SERVER_HOSTNAME=localhost`)
-- **nginx config templates**: two templates exist — `nginx/default.conf.template` (production, HTTPS + certbot) and `nginx/local.conf.template` (local, HTTP only). The override file maps the local one into the nginx container.
+- **nginx config templates**: four templates exist — `nginx/default.conf.template` (production, HTTPS + Basic Auth), `nginx/local.conf.template` (local, HTTP + Basic Auth), `nginx/noauth.conf.template` (production, HTTPS + App Auth), `nginx/local-noauth.conf.template` (local, HTTP + App Auth). The override file maps the local template into the nginx container. To use App Auth mode locally, edit the override file to mount `local-noauth.conf.template` instead of `local.conf.template`.
 - To test the API locally without Docker: `cd api && uvicorn main:app --reload`
   Set env vars: `ADMIN_TOKEN=dev DB_PATH=./radio.db MEDIA_DIR=./media`
 - **After any Python file change, always use `--build`**: `docker compose up -d --build api && docker compose restart nginx`. Without `--build`, Docker restarts the container using the old image — the code change is silently ignored and the old behaviour persists. nginx must also be restarted because it caches the api container's IP at startup (otherwise it serves 502s).
