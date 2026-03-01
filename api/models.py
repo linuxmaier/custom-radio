@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -9,17 +8,17 @@ class Track:
     artist: str
     submitter: str
     source_type: str  # 'upload' | 'youtube' | 'spotify'
-    source_url: Optional[str]
-    file_path: Optional[str]
-    duration_s: Optional[float]
-    tempo_bpm: Optional[float]
-    rms_energy: Optional[float]
-    spectral_centroid: Optional[float]
-    zero_crossing_rate: Optional[float]
+    source_url: str | None
+    file_path: str | None
+    duration_s: float | None
+    tempo_bpm: float | None
+    rms_energy: float | None
+    spectral_centroid: float | None
+    zero_crossing_rate: float | None
     status: str  # 'pending' | 'processing' | 'ready' | 'failed'
-    error_msg: Optional[str]
+    error_msg: str | None
     submitted_at: str
-    ready_at: Optional[str]
+    ready_at: str | None
 
 
 @dataclass
@@ -28,9 +27,9 @@ class Job:
     track_id: str
     status: str  # 'pending' | 'processing' | 'done' | 'failed'
     created_at: str
-    started_at: Optional[str]
-    finished_at: Optional[str]
-    error_msg: Optional[str]
+    started_at: str | None
+    finished_at: str | None
+    error_msg: str | None
 
 
 @dataclass

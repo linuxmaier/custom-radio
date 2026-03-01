@@ -1,7 +1,7 @@
 import logging
 import os
 import socket
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from database import db, get_config, set_config
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
@@ -74,7 +74,7 @@ def request_skip(auth=Depends(require_admin)):
         logger.info("Skip sent to Liquidsoap")
     except Exception as e:
         logger.error(f"Skip failed: {e}")
-        raise HTTPException(503, "Could not reach Liquidsoap")
+        raise HTTPException(503, "Could not reach Liquidsoap") from None
     return {"ok": True}
 
 
@@ -84,7 +84,7 @@ def youtube_cookies_status(auth=Depends(require_admin)):
     exists = os.path.exists(COOKIES_PATH)
     updated_at = None
     if exists:
-        updated_at = datetime.fromtimestamp(os.path.getmtime(COOKIES_PATH), timezone.utc).isoformat()
+        updated_at = datetime.fromtimestamp(os.path.getmtime(COOKIES_PATH), UTC).isoformat()
     return {"present": exists, "updated_at": updated_at}
 
 

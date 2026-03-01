@@ -1,7 +1,7 @@
 import logging
 import math
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from audio import AudioFeatures, euclidean_distance, normalize_features
 from database import db, get_config, set_config
@@ -138,7 +138,7 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
         last_played_id = last_played["track_id"] if last_played else ""
 
         if cooldown_active:
-            cutoff = (datetime.now(timezone.utc) - timedelta(seconds=COOLDOWN_WINDOW_S)).isoformat()
+            cutoff = (datetime.now(UTC) - timedelta(seconds=COOLDOWN_WINDOW_S)).isoformat()
             rows = conn.execute(
                 """
                 SELECT t.id, t.title, t.artist, t.file_path,
@@ -261,7 +261,7 @@ def _pick_mood_track() -> dict | None:
                   ORDER BY MAX(played_at) DESC
                   LIMIT {exclusion_count}
               )
-            """
+            """,  # noqa: S608 — exclusion_count is always an int derived from library_size
         ).fetchall()
 
     if not rows:

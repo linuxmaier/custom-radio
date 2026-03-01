@@ -41,7 +41,7 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
     cmd.append(url)
 
     logger.info(f"Downloading YouTube: {url}")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # noqa: S603
 
     if result.returncode != 0:
         stderr = result.stderr
@@ -115,7 +115,7 @@ def convert_to_standard_mp3(input_path: str, track_id: str, comment_tag: str, ti
     ]
 
     logger.info(f"Converting {input_path} -> {output_path}")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # noqa: S603
 
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg conversion failed: {result.stderr[-500:]}")
