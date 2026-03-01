@@ -467,6 +467,14 @@
             this.pushNeedsInstall = ph.needsInstall();
             ph.isSubscribed().then(v => { this.pushSubscribed = v; });
           }
+
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', (e) => {
+              if (e.data?.type === 'navigate') {
+                location.hash = new URL(e.data.url, location.origin).hash || '#';
+              }
+            });
+          }
         },
 
         _applyHash(hash) {

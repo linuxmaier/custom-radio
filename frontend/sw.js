@@ -35,7 +35,7 @@ self.addEventListener('notificationclick', (e) => {
       for (var i = 0; i < clients.length; i++) {
         var c = clients[i];
         if ('focus' in c) {
-          if (c.navigate) c.navigate(target);
+          c.postMessage({ type: 'navigate', url: target });
           return c.focus();
         }
       }
