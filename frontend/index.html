@@ -324,8 +324,8 @@
             <span x-show="cookieStatus !== null && cookieStatus.present"
                   style="color:var(--success)">
               ✓ Cookies present
-              <span x-show="cookieStatus.updated_at" style="color:var(--muted)"
-                    x-text="' (updated ' + new Date(cookieStatus.updated_at).toLocaleDateString() + ')'"></span>
+              <span x-show="cookieStatus && cookieStatus.updated_at" style="color:var(--muted)"
+                    x-text="cookieStatus && cookieStatus.updated_at ? ' (updated ' + new Date(cookieStatus.updated_at).toLocaleDateString() + ')' : ''"></span>
             </span>
             <span x-show="cookieStatus !== null && !cookieStatus.present"
                   style="color:var(--danger)">✗ No cookies — YouTube downloads will fail on AWS</span>
@@ -383,7 +383,7 @@
     <button x-show="castAvailable || casting" @click="cast()" class="mini-btn"
             :class="casting ? '' : 'secondary'"
             :aria-label="casting ? 'Stop casting' : 'Cast to device'"
-            :title="casting ? 'Use Google Home or the cast notification to stop casting' : 'Cast to device'">
+            :title="casting ? 'Tap to manage or stop casting' : 'Cast to device'">
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
         <path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"/>
       </svg>
@@ -445,7 +445,7 @@
 
           this._setupAudioListeners(audio);
           this.airplayAvailable = typeof audio.webkitShowPlaybackTargetPicker === 'function';
-          this._setupRemotePlayback(audio);
+          this._loadCastSdk();
 
           if ('mediaSession' in navigator) {
             navigator.mediaSession.setActionHandler('play',  () => { console.log('[radio] mediaSession: play action | playing:', this.playing, 'casting:', this.casting); if (!this.playing && !this.casting) this.togglePlay(); });
@@ -481,7 +481,7 @@
             this.everPlayed = true;
           });
           el.addEventListener('playing', () => {
-            console.log('[radio] event: playing | playing:', this.playing, 'loading:', this.loading, 'remote.state:', el.remote?.state, '| el is current:', el === this._audio);
+            console.log('[radio] event: playing | playing:', this.playing, 'loading:', this.loading, '| el is current:', el === this._audio);
             this.playing = true;
             this.loading = false;
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
@@ -491,7 +491,7 @@
             this.loading = true;
           });
           el.addEventListener('pause', () => {
-            console.log('[radio] event: pause | playing:', this.playing, 'remote.state:', el.remote?.state, '| el is current:', el === this._audio);
+            console.log('[radio] event: pause | playing:', this.playing, '| el is current:', el === this._audio);
             this.playing = false;
             this.loading = false;
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
@@ -503,62 +503,58 @@
           });
         },
 
-        _setupRemotePlayback(el) {
-          if (!('remote' in el)) {
-            console.log('[radio] Remote Playback API not available on this element');
-            return;
-          }
-          console.log('[radio] _setupRemotePlayback: attaching listeners to new element');
-          el.remote.watchAvailability((available) => {
-            const isCurrent = el === this._audio;
-            console.log('[radio] castAvailable changed to:', available, '| el is current:', isCurrent);
-            if (isCurrent) this.castAvailable = available;
-          }).catch((e) => { console.log('[radio] watchAvailability rejected:', e); });
-
-          el.remote.addEventListener('connect', () => {
-            const isCurrent = el === this._audio;
-            console.log('[radio] remote: connect | state:', el.remote.state, '| audio.paused:', el.paused, 'readyState:', el.readyState, '| el is current:', isCurrent);
-            if (isCurrent) this.casting = true;
-          });
-
-          el.remote.addEventListener('disconnect', () => {
-            const isCurrent = el === this._audio;
-            console.log('[radio] remote: disconnect | state:', el.remote.state, 'playing:', this.playing, 'readyState:', el.readyState, '| el is current:', isCurrent);
-            if (!isCurrent) {
-              console.log('[radio] remote: disconnect on stale element — ignoring');
-              return;
-            }
-            this.casting = false;
-            this.castMsg = '';
-            this.playing = false;
-            this.loading = false;
-            // audio.load() per spec should reset the remote session, but Chrome doesn't
-            // honour it — prompt() still rejects immediately on the same element instance.
-            // The only reliable fix is replacing the DOM element entirely: a fresh
-            // HTMLMediaElement has no remote session history, so prompt() works again.
-            console.log('[radio] remote: disconnect — replacing <audio> element to clear Chrome remote session block');
-            this._replaceAudioElement(el);
-          });
+        _loadCastSdk() {
+          // The Cast SDK calls window.__onGCastApiAvailable when it finishes loading.
+          // Define the callback before injecting the script so we close over `this`.
+          // Guard against double injection: Alpine calls init() automatically because
+          // the data object has an init() method, AND the body has x-init="init()".
+          if (window.__castSdkLoading) return;
+          window.__castSdkLoading = true;
+          window.__onGCastApiAvailable = (isAvailable) => {
+            console.log('[radio] Cast SDK available:', isAvailable);
+            if (isAvailable) this._setupCastSdk();
+          };
+          const s = document.createElement('script');
+          s.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+          document.head.appendChild(s);
         },
 
-        _replaceAudioElement(oldEl) {
-          if (oldEl !== this._audio) {
-            console.log('[radio] _replaceAudioElement: guard fired — oldEl is stale, skipping');
-            return;
-          }
-          console.log('[radio] _replaceAudioElement: creating new <audio> element');
-          const newEl = document.createElement('audio');
-          newEl.preload = 'auto';
-          newEl.volume = this.volume;
-          const src = this.publicStreamUrl || this.streamUrl;
-          newEl.src = src;
-          console.log('[radio] _replaceAudioElement: new element — src:', src, 'volume:', newEl.volume, 'Remote API available:', 'remote' in newEl);
-          oldEl.parentNode.replaceChild(newEl, oldEl);
-          this._audio = newEl;
-          this.castAvailable = false; // watchAvailability not yet set up on newEl
-          this._setupAudioListeners(newEl);
-          this._setupRemotePlayback(newEl);
-          console.log('[radio] _replaceAudioElement: complete — new element is ready for casting');
+        _setupCastSdk() {
+          const context = cast.framework.CastContext.getInstance();
+          context.setOptions({
+            receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+            autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+          });
+
+          context.addEventListener(
+            cast.framework.CastContextEventType.CAST_STATE_CHANGED,
+            (e) => {
+              const s = e.castState;
+              const CastState = cast.framework.CastState;
+              console.log('[radio] Cast state:', s);
+              this.castAvailable = s !== CastState.NO_DEVICES_AVAILABLE;
+              this.casting = s === CastState.CONNECTED;
+            }
+          );
+
+          context.addEventListener(
+            cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+            (e) => {
+              const ss = e.sessionState;
+              const SessionState = cast.framework.SessionState;
+              console.log('[radio] Cast session state:', ss);
+              if (ss === SessionState.SESSION_ENDED || ss === SessionState.SESSION_START_FAILED) {
+                this.casting = false;
+                this.castMsg = '';
+                // Resume local playback after cast ends
+                const src = (this.publicStreamUrl || this.streamUrl) + '?t=' + Date.now();
+                this._audio.src = src;
+                this._audio.play()
+                  .then(() => { console.log('[radio] local audio resumed after cast ended'); })
+                  .catch((e) => { console.log('[radio] local audio resume rejected after cast ended:', e.name); });
+              }
+            }
+          );
         },
 
         togglePlay() {
@@ -593,59 +589,53 @@
         },
 
         async cast() {
-          const audio = this._audio;
-          // Use remote.state as authoritative fallback — this.casting may lag if a
-          // transient disconnect+connect fired and we missed the connect event.
-          const activelyCasting = this.casting || (audio.remote && audio.remote.state === 'connected');
-          console.log('[radio] cast() — casting:', this.casting, 'remote.state:', audio.remote?.state, 'activelyCasting:', activelyCasting, 'playing:', this.playing, 'publicStreamUrl:', this.publicStreamUrl);
+          if (!window.cast) {
+            console.log('[radio] cast: Cast SDK not loaded yet');
+            return;
+          }
+          const context = cast.framework.CastContext.getInstance();
+          console.log('[radio] cast() — casting:', this.casting, 'castState:', context.getCastState());
 
-          if (activelyCasting) {
-            // Already casting — prompt() shows the "Stop Casting" option in Chrome Android.
-            // Resolves if user disconnects (disconnect event handles cleanup),
-            // rejects (NotAllowedError) if user dismisses without stopping.
-            console.log('[radio] cast: already casting — calling prompt() to show manage/stop UI');
-            try {
-              await audio.remote.prompt();
-              console.log('[radio] cast: prompt() resolved while casting (user stopped cast)');
-            } catch (e) {
-              console.log('[radio] cast: prompt() rejected while casting:', e.name, e.message);
-              this.castMsg = 'Use Google Home or the cast notification to stop casting.';
-              setTimeout(() => { this.castMsg = ''; }, 5000);
-            }
+          if (this.casting) {
+            // Already casting — requestSession() shows the Cast management dialog
+            // which includes a "Stop Casting" option.
+            console.log('[radio] cast: already casting — opening management dialog');
+            context.requestSession().catch((e) => {
+              console.log('[radio] cast: requestSession (manage) rejected:', e);
+            });
             return;
           }
 
-          if (!this.publicStreamUrl) {
-            console.log('[radio] cast: no publicStreamUrl — calling prompt() directly');
-            audio.remote.prompt().catch((e) => { console.log('[radio] cast: prompt() rejected (no public URL):', e.name); });
-            return;
-          }
-
-          const wasPlaying = this.playing;
-          const castSrc = this.publicStreamUrl + '?t=' + Date.now();
-          console.log('[radio] cast: switching src to castSrc, wasPlaying:', wasPlaying, 'castSrc:', castSrc);
-          audio.src = castSrc;
-          // Always call play() before prompt() — Chrome transfers the audio element's
-          // current playback state to the remote device. If the element is paused/idle,
-          // the cast device receives silence. play() ensures Chrome has an active stream
-          // to hand off, regardless of whether the user was already playing locally.
-          audio.play()
-            .then(() => { console.log('[radio] cast: audio.play() resolved | paused:', audio.paused, 'readyState:', audio.readyState); })
-            .catch((e) => { console.warn('[radio] cast: audio.play() rejected:', e.name, e.message, '| paused:', audio.paused); });
-          console.log('[radio] cast: state before prompt() | paused:', audio.paused, 'readyState:', audio.readyState, 'networkState:', audio.networkState, 'remote.state:', audio.remote?.state);
+          const castUrl = this.publicStreamUrl || this.streamUrl;
+          console.log('[radio] cast: requesting session, castUrl:', castUrl);
           try {
-            console.log('[radio] cast: calling prompt()');
-            await audio.remote.prompt();
-            console.log('[radio] cast: prompt() resolved — connect event will set casting=true');
+            const err = await context.requestSession();
+            if (err) { console.log('[radio] cast: requestSession error:', err); return; }
+
+            const session = context.getCurrentSession();
+            if (!session) { console.log('[radio] cast: no session after requestSession'); return; }
+
+            // Pause local audio — the Chromecast will connect to the stream directly
+            // and is entirely independent of local tab state from here on.
+            this._audio.pause();
+
+            const mediaInfo = new chrome.cast.media.MediaInfo(castUrl, 'audio/mpeg');
+            mediaInfo.streamType = chrome.cast.media.StreamType.LIVE;
+            if (this.nowPlaying?.title) {
+              const meta = new chrome.cast.media.MusicTrackMediaMetadata();
+              meta.title = this.nowPlaying.title;
+              meta.artist = this.nowPlaying.artist || '';
+              mediaInfo.metadata = meta;
+            }
+
+            console.log('[radio] cast: loading media on Chromecast');
+            await session.loadMedia(new chrome.cast.media.LoadRequest(mediaInfo));
+            console.log('[radio] cast: media loaded — Chromecast is streaming independently');
           } catch (e) {
-            console.log('[radio] cast: prompt() rejected (user cancelled):', e.name, e.message);
-            // User cancelled picker — restore prior local state
-            this.casting = false;
-            if (wasPlaying) {
-              audio.src = (this.publicStreamUrl || this.streamUrl) + '?t=' + Date.now();
-              audio.play().catch(() => {});
-            } else {
-              audio.pause();
+            console.log('[radio] cast: failed:', e);
+            if (e !== chrome.cast.ErrorCode.CANCEL) {
+              this.castMsg = 'Cast failed. Try again.';
+              setTimeout(() => { this.castMsg = ''; }, 4000);
             }
           }
         },
