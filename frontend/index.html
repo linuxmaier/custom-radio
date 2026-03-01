@@ -14,7 +14,101 @@
 <body x-data="shell()" x-init="init()" :class="{ 'has-player-bar': everPlayed }">
   <script src="/static/nav.js"></script>
 
-  <div class="container">
+  <!-- Loading spinner (before auth check completes) -->
+  <div x-show="!authChecked" class="container" x-cloak>
+    <div class="empty-state">Loading…</div>
+  </div>
+
+  <div class="container" x-show="authChecked" x-cloak>
+
+    <!-- ── Login view ── -->
+    <div x-show="view === 'login'">
+      <h1>Sign In</h1>
+      <p class="subtitle">Enter your email to request access or receive a sign-in link.</p>
+
+      <div class="card">
+        <!-- Step 1: email entry -->
+        <div x-show="loginState === 'email'">
+          <div class="form-group">
+            <label for="loginEmail">Email address</label>
+            <input id="loginEmail" type="email" x-model="loginEmail"
+                   @keydown.enter="requestAccess()"
+                   placeholder="you@example.com" autocomplete="email" />
+          </div>
+          <div class="alert error" x-show="loginError" x-cloak x-text="loginError"
+               style="margin-bottom:0.75rem;"></div>
+          <button class="btn" @click="requestAccess()" :disabled="loginBusy">
+            <span x-show="loginBusy" class="spinner"></span>
+            <span x-text="loginBusy ? 'Sending…' : 'Continue'"></span>
+          </button>
+        </div>
+
+        <!-- Step 2a: pending approval -->
+        <div x-show="loginState === 'pending'" x-cloak>
+          <div class="alert warning" style="margin-bottom:0.75rem;">
+            <span x-text="loginMsg"></span>
+          </div>
+          <button class="btn secondary" @click="loginState = 'email'; loginError = ''">Try a different email</button>
+        </div>
+
+        <!-- Step 2b: code entry -->
+        <div x-show="loginState === 'code'" x-cloak>
+          <p style="color:var(--muted); font-size:0.9rem; margin-bottom:1rem;">
+            Check your email. Open the link and enter the 6-digit code shown on the page.
+          </p>
+          <div class="form-group">
+            <label for="claimCode">6-digit code</label>
+            <input id="claimCode" type="text" inputmode="numeric" maxlength="7"
+                   x-model="claimCode"
+                   @keydown.enter="claimSession()"
+                   placeholder="000 000" autocomplete="one-time-code"
+                   style="font-size:1.4rem; letter-spacing:0.15em; text-align:center;" />
+          </div>
+          <div class="alert error" x-show="loginError" x-cloak x-text="loginError"
+               style="margin-bottom:0.75rem;"></div>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button class="btn" @click="claimSession()" :disabled="loginBusy">
+              <span x-show="loginBusy" class="spinner"></span>
+              <span x-text="loginBusy ? 'Signing in…' : 'Sign In'"></span>
+            </button>
+            <button class="btn secondary" @click="loginState = 'email'; loginError = ''; claimCode = ''">
+              Resend link
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- ── /Login view ── -->
+
+    <!-- ── Setup view (first login — set display name) ── -->
+    <div x-show="view === 'setup'">
+      <h1>Welcome!</h1>
+      <p class="subtitle">Choose a display name. This is how your submissions appear on the station.</p>
+
+      <div class="card">
+        <div class="form-group">
+          <label for="setupName">Display name</label>
+          <input id="setupName" type="text" x-model="setupName"
+                 @keydown.enter="saveDisplayName()"
+                 placeholder="e.g. Mom, Dad, Grandpa…" maxlength="50" />
+        </div>
+        <div class="alert error" x-show="setupError" x-cloak x-text="setupError"
+             style="margin-bottom:0.75rem;"></div>
+        <button class="btn" @click="saveDisplayName()" :disabled="setupBusy">
+          <span x-show="setupBusy" class="spinner"></span>
+          <span x-text="setupBusy ? 'Saving…' : 'Continue'"></span>
+        </button>
+      </div>
+    </div>
+    <!-- ── /Setup view ── -->
+
+    <!-- User bar (shown on all non-auth views) -->
+    <div x-show="user && view !== 'login' && view !== 'setup'"
+         style="text-align:right; font-size:0.8rem; color:var(--muted); margin-bottom:0.5rem;" x-cloak>
+      <span x-text="user?.name || user?.email"></span>
+      &nbsp;·&nbsp;
+      <a href="#" @click.prevent="logout()" style="color:var(--accent);">Logout</a>
+    </div>
 
     <!-- ── Submit view ── -->
     <div x-show="view === 'submit'" x-data="submitView()" x-init="initSubmit()">
@@ -57,15 +151,8 @@
 
         <form @submit.prevent="submitSong">
           <div class="form-group">
-            <label for="submitter">Your name</label>
-            <input id="submitter" type="text" x-model="submitter"
-                   list="submitter-names"
-                   placeholder="e.g. Mom, Dad, Grandpa…" required />
-            <datalist id="submitter-names">
-              <template x-for="name in submitterNames" :key="name">
-                <option :value="name"></option>
-              </template>
-            </datalist>
+            <label>Submitting as</label>
+            <p style="font-weight:600; margin:0;" x-text="$root.user?.name || $root.user?.email"></p>
           </div>
 
           <div x-show="tab === 'file'">
@@ -254,6 +341,9 @@
                 <div x-text="formatDate(track.submitted_at)"></div>
                 <div x-text="track.play_count === 1 ? '1 play' : track.play_count + ' plays'"></div>
               </div>
+              <button x-show="track.user_id && track.user_id === $root.user?.id"
+                      class="btn danger" style="padding:0.35rem 0.75rem; font-size:0.8rem; flex-shrink:0;"
+                      @click="deleteTrack(track.id)" x-cloak>✕</button>
             </div>
           </template>
         </div>
@@ -281,6 +371,52 @@
       <div x-show="authed" x-cloak>
         <div class="alert success" x-show="successMsg" x-cloak x-text="successMsg"></div>
         <div class="alert error" x-show="errorMsg" x-cloak x-text="errorMsg"></div>
+
+        <!-- Pending access requests -->
+        <div class="card" x-show="pendingUsers.length > 0" x-cloak>
+          <h2>Pending Requests (<span x-text="pendingUsers.length"></span>)</h2>
+          <template x-for="u in pendingUsers" :key="u.id">
+            <div class="track-item">
+              <div class="track-meta">
+                <div class="track-title" x-text="u.email"></div>
+                <div class="track-sub" x-text="'Requested ' + formatDate(u.created_at)"></div>
+              </div>
+              <div style="display:flex; gap:0.4rem; flex-shrink:0;">
+                <button class="btn" style="padding:0.35rem 0.75rem; font-size:0.8rem;"
+                        @click="approveUser(u.id)">Approve</button>
+                <button class="btn danger" style="padding:0.35rem 0.75rem; font-size:0.8rem;"
+                        @click="rejectUser(u.id)">Reject</button>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Users list -->
+        <div class="card">
+          <h2>Users</h2>
+          <div x-show="approvedUsers.length === 0" class="empty-state" style="padding:0.5rem 0;">No approved users yet.</div>
+          <template x-for="u in approvedUsers" :key="u.id">
+            <div class="track-item">
+              <div class="track-meta">
+                <div class="track-title" x-text="u.name || u.email"></div>
+                <div class="track-sub" x-show="u.name" x-text="u.email"></div>
+              </div>
+              <button class="btn danger" style="padding:0.35rem 0.75rem; font-size:0.8rem; flex-shrink:0;"
+                      @click="removeUser(u.id)">Remove</button>
+            </div>
+          </template>
+
+          <div style="margin-top:1.25rem; padding-top:1rem; border-top:1px solid var(--border);">
+            <h3 style="font-size:1rem; margin-bottom:0.75rem;">Add User</h3>
+            <div class="form-group">
+              <input type="email" x-model="newUserEmail" placeholder="Email address" />
+            </div>
+            <div class="form-group">
+              <input type="text" x-model="newUserName" placeholder="Display name (optional)" maxlength="50" />
+            </div>
+            <button class="btn" @click="addUser()">Add &amp; Send Link</button>
+          </div>
+        </div>
 
         <div class="card">
           <h2>Programming Mode</h2>
@@ -410,6 +546,20 @@
     function shell() {
       var _cachedPublicStream = localStorage.getItem('radioPublicStreamUrl') || '';
       return {
+        // auth state
+        user: null,
+        authChecked: false,
+        loginState: 'email',   // 'email' | 'pending' | 'code'
+        loginEmail: '',
+        loginMsg: '',
+        loginError: '',
+        loginBusy: false,
+        claimCode: '',
+        setupName: '',
+        setupError: '',
+        setupBusy: false,
+
+        // player state
         view: 'playing',
         nowPlaying: null,
         recent: [],
@@ -432,11 +582,14 @@
         pushBusy: false,
         pushError: '',
 
-        init() {
-          console.log('[radio] init — streamUrl:', this.streamUrl, 'publicStreamUrl:', this.publicStreamUrl);
-          this._applyHash(location.hash);
-          window.addEventListener('hashchange', () => { this._applyHash(location.hash); });
+        async init() {
+          // Guard: Alpine calls init() twice (auto-detect + x-init attribute).
+          if (this._initRunning) return;
+          this._initRunning = true;
 
+          console.log('[radio] init — streamUrl:', this.streamUrl, 'publicStreamUrl:', this.publicStreamUrl);
+
+          // Set up audio immediately (no auth dependency)
           const audio = this.$refs.audio;
           this._audio = audio;
           audio.volume = this.volume;
@@ -453,13 +606,12 @@
             navigator.mediaSession.setActionHandler('stop',  () => { console.log('[radio] mediaSession: stop action | playing:', this.playing, 'casting:', this.casting); if (this.playing && !this.casting) this.togglePlay(); });
           }
 
+          window.addEventListener('hashchange', () => { this._applyHash(location.hash); });
+
           this.$watch('view', (v) => {
             if (v === 'library') this.$dispatch('load-library');
             if (v === 'admin')   this.$dispatch('load-admin');
           });
-
-          this.refresh();
-          setInterval(() => this.refresh(), 15000);
 
           const ph = window.pushHelpers;
           if (ph && ph.isSupported()) {
@@ -475,13 +627,139 @@
               }
             });
           }
+
+          // Auth check — determines view routing
+          try {
+            const res = await fetch('/api/auth/me');
+            if (res.ok) {
+              this.user = await res.json();
+              this.authChecked = true;
+              this._applyHash(location.hash);
+              this.refresh();
+              setInterval(() => this.refresh(), 15000);
+            } else {
+              this.authChecked = true;
+              this.view = 'login';
+            }
+          } catch (e) {
+            console.error('[radio] auth/me fetch failed:', e);
+            this.authChecked = true;
+            this.view = 'login';
+          }
         },
 
         _applyHash(hash) {
+          if (!this.user) {
+            this.view = 'login';
+            return;
+          }
           const h = hash.replace(/^#\/?/, '');
           const valid = ['submit', 'playing', 'library', 'admin'];
           this.view = valid.includes(h) ? h : 'playing';
         },
+
+        // ── Auth actions ──────────────────────────────────────────────────
+
+        async requestAccess() {
+          this.loginError = '';
+          const email = this.loginEmail.trim();
+          if (!email) { this.loginError = 'Please enter your email.'; return; }
+          this.loginBusy = true;
+          try {
+            const res = await fetch('/api/auth/request-access', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              this.loginError = data.detail || 'Something went wrong.';
+              return;
+            }
+            this.loginMsg = data.msg;
+            if (data.status === 'approved') {
+              this.loginState = 'code';
+            } else {
+              this.loginState = 'pending';
+            }
+          } catch (e) {
+            this.loginError = 'Network error. Please try again.';
+          } finally {
+            this.loginBusy = false;
+          }
+        },
+
+        async claimSession() {
+          this.loginError = '';
+          const code = this.claimCode.replace(/\D/g, '');
+          if (code.length !== 6) { this.loginError = 'Please enter the 6-digit code.'; return; }
+          this.loginBusy = true;
+          try {
+            const res = await fetch('/api/auth/claim', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              this.loginError = data.detail || 'Code is invalid or expired.';
+              return;
+            }
+            this.user = data.user;
+            if (data.needs_name) {
+              this.view = 'setup';
+            } else {
+              this._applyHash(location.hash);
+              this.refresh();
+              setInterval(() => this.refresh(), 15000);
+            }
+          } catch (e) {
+            this.loginError = 'Network error. Please try again.';
+          } finally {
+            this.loginBusy = false;
+          }
+        },
+
+        async saveDisplayName() {
+          this.setupError = '';
+          const name = this.setupName.trim();
+          if (!name) { this.setupError = 'Please enter a display name.'; return; }
+          this.setupBusy = true;
+          try {
+            const res = await fetch('/api/auth/me', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              this.setupError = data.detail || 'Could not save name.';
+              return;
+            }
+            this.user = { ...this.user, name: data.name };
+            this._applyHash(location.hash);
+            this.refresh();
+            setInterval(() => this.refresh(), 15000);
+          } catch (e) {
+            this.setupError = 'Network error. Please try again.';
+          } finally {
+            this.setupBusy = false;
+          }
+        },
+
+        async logout() {
+          try {
+            await fetch('/api/auth/logout', { method: 'POST' });
+          } catch (e) { /* ignore */ }
+          this.user = null;
+          this.loginState = 'email';
+          this.loginEmail = '';
+          this.loginError = '';
+          this.claimCode = '';
+          this.view = 'login';
+        },
+
+        // ── Audio & player ────────────────────────────────────────────────
 
         _setupAudioListeners(el) {
           el.addEventListener('play', () => {
@@ -649,8 +927,14 @@
         },
 
         async refresh() {
+          if (!this.user) return;
           try {
             const res = await fetch('/api/status');
+            if (res.status === 401) {
+              this.user = null;
+              this.view = 'login';
+              return;
+            }
             const data = await res.json();
             this.nowPlaying = data.now_playing;
             this.recent = data.recent;
@@ -712,8 +996,6 @@
     function submitView() {
       return {
         tab: 'file',
-        submitter: '',
-        submitterNames: [],
         title: '',
         artist: '',
         comment: '',
@@ -733,10 +1015,7 @@
         _dupCheckTimer: null,
 
         initSubmit() {
-          fetch('/api/submitters')
-            .then(r => r.json())
-            .then(data => { this.submitterNames = data.submitters; })
-            .catch(() => {});
+          // No submitter fetch needed — name comes from the logged-in user
         },
 
         fileSelected(event) {
@@ -794,8 +1073,9 @@
           this.warning = '';
           this.successTrackId = '';
 
-          if (!this.submitter.trim()) {
-            this.errorMsg = 'Please enter your name.';
+          const submitter = (this.$root.user?.name || this.$root.user?.email || '').trim();
+          if (!submitter) {
+            this.errorMsg = 'Could not determine your name. Please log out and sign in again.';
             return;
           }
 
@@ -809,7 +1089,7 @@
 
           this.submitting = true;
           const fd = new FormData();
-          fd.append('submitter', this.submitter.trim());
+          fd.append('submitter', submitter);
 
           if (this.tab === 'file') {
             if (!this.file) { this.errorMsg = 'Please select a file.'; this.submitting = false; return; }
@@ -900,6 +1180,21 @@
           this.loading = false;
         },
 
+        async deleteTrack(id) {
+          if (!confirm('Remove this track from the library?')) return;
+          try {
+            const res = await fetch('/api/track/' + id, { method: 'DELETE' });
+            if (res.ok) {
+              this.tracks = this.tracks.filter(t => t.id !== id);
+            } else {
+              const data = await res.json();
+              alert(data.detail || 'Failed to delete track.');
+            }
+          } catch (e) {
+            alert('Network error. Please try again.');
+          }
+        },
+
         formatDate(iso) {
           return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
         },
@@ -913,11 +1208,22 @@
         authError: '',
         config: {},
         tracks: [],
+        users: [],
         cookieStatus: null,
         successMsg: '',
         errorMsg: '',
         pollTimer: null,
         _loaded: false,
+        newUserEmail: '',
+        newUserName: '',
+
+        get pendingUsers() {
+          return this.users.filter(u => u.status === 'pending');
+        },
+
+        get approvedUsers() {
+          return this.users.filter(u => u.status === 'approved');
+        },
 
         async loadAdmin() {
           if (this._loaded) return;
@@ -935,8 +1241,7 @@
               this.config = await res.json();
               this.authed = true;
               localStorage.setItem('adminToken', this.tokenInput);
-              await this.loadLibrary();
-              await this.loadCookieStatus();
+              await Promise.all([this.loadLibrary(), this.loadCookieStatus(), this.loadUsers()]);
             } else {
               this.authError = 'Invalid token.';
               localStorage.removeItem('adminToken');
@@ -953,6 +1258,14 @@
           this.managePoll();
         },
 
+        async loadUsers() {
+          const res = await this.apiGet('/api/auth/users');
+          if (res.ok) {
+            const data = await res.json();
+            this.users = data.users;
+          }
+        },
+
         managePoll() {
           const hasPending = this.tracks.some(t => t.status === 'pending');
           if (hasPending && !this.pollTimer) {
@@ -960,6 +1273,54 @@
           } else if (!hasPending && this.pollTimer) {
             clearInterval(this.pollTimer);
             this.pollTimer = null;
+          }
+        },
+
+        async approveUser(userId) {
+          const res = await this.apiPost('/api/auth/users/' + userId + '/approve', {});
+          if (res.ok) {
+            await this.loadUsers();
+            this.flash('success', 'User approved and welcome email sent.');
+          } else {
+            this.flash('error', 'Failed to approve user.');
+          }
+        },
+
+        async rejectUser(userId) {
+          const res = await this.apiPost('/api/auth/users/' + userId + '/reject', {});
+          if (res.ok) {
+            await this.loadUsers();
+            this.flash('success', 'User rejected.');
+          } else {
+            this.flash('error', 'Failed to reject user.');
+          }
+        },
+
+        async removeUser(userId) {
+          if (!confirm('Remove this user? This will delete their session and access.')) return;
+          const res = await this.apiFetch('DELETE', '/api/auth/users/' + userId);
+          if (res.ok) {
+            await this.loadUsers();
+            this.flash('success', 'User removed.');
+          } else {
+            this.flash('error', 'Failed to remove user.');
+          }
+        },
+
+        async addUser() {
+          const email = this.newUserEmail.trim();
+          if (!email) { this.flash('error', 'Email is required.'); return; }
+          const body = { email };
+          if (this.newUserName.trim()) body.name = this.newUserName.trim();
+          const res = await this.apiPost('/api/auth/users', body);
+          if (res.ok) {
+            this.newUserEmail = '';
+            this.newUserName = '';
+            await this.loadUsers();
+            this.flash('success', 'User added and sign-in link sent.');
+          } else {
+            const data = await res.json();
+            this.flash('error', data.detail || 'Failed to add user.');
           }
         },
 
@@ -1045,6 +1406,10 @@
         flash(type, msg) {
           this[type === 'success' ? 'successMsg' : 'errorMsg'] = msg;
           setTimeout(() => { this.successMsg = ''; this.errorMsg = ''; }, 4000);
+        },
+
+        formatDate(iso) {
+          return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
         },
 
         formatDuration(s) {

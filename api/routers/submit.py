@@ -7,8 +7,10 @@ from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 from database import db
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
+
+from routers.auth import require_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -55,14 +57,15 @@ def _create_track_and_job(
     source_url: str | None = None,
     comment: str | None = None,
     youtube_video_id: str | None = None,
+    user_id: str | None = None,
 ):
     conn.execute(
         """
         INSERT INTO tracks (id, title, artist, submitter, source_type, source_url,
-                            status, submitted_at, comment, youtube_video_id)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+                            status, submitted_at, comment, youtube_video_id, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
         """,
-        (track_id, title, artist, submitter, source_type, source_url, _now(), comment, youtube_video_id),
+        (track_id, title, artist, submitter, source_type, source_url, _now(), comment, youtube_video_id, user_id),
     )
     conn.execute(
         "INSERT INTO jobs (track_id, status, created_at) VALUES (?, 'pending', ?)",
@@ -75,6 +78,7 @@ def check_duplicate(
     video_id: str | None = None,
     title: str | None = None,
     artist: str | None = None,
+    user: dict = Depends(require_user),
 ):
     matches = []
 
@@ -138,6 +142,7 @@ async def submit_track(
     artist: str = Form(None),
     file: UploadFile = File(None),
     comment: str | None = Form(None),
+    user: dict = Depends(require_user),
 ):
     if not submitter or not submitter.strip():
         raise HTTPException(400, "submitter is required")
@@ -196,6 +201,7 @@ async def submit_track(
                 submitter,
                 "upload",
                 comment=comment,
+                user_id=user["id"],
             )
 
         logger.info(f"Upload submission: track_id={track_id} file={dest}")
@@ -219,9 +225,31 @@ async def submit_track(
                 url,
                 comment=comment,
                 youtube_video_id=video_id,
+                user_id=user["id"],
             )
 
         logger.info(f"YouTube submission: track_id={track_id} url={url}")
         return JSONResponse({"track_id": track_id, "status": "pending"})
 
     raise HTTPException(400, "Provide exactly one of: file or youtube_url")  # unreachable
+
+
+@router.delete("/track/{track_id}")
+def delete_own_track(track_id: str, user: dict = Depends(require_user)):
+    """Delete a track the user submitted themselves."""
+    with db() as conn:
+        row = conn.execute("SELECT file_path, user_id FROM tracks WHERE id = ?", (track_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Track not found")
+        if row["user_id"] != user["id"]:
+            raise HTTPException(403, "You can only delete your own tracks")
+        file_path = row["file_path"]
+        conn.execute("DELETE FROM play_log WHERE track_id = ?", (track_id,))
+        conn.execute("DELETE FROM jobs WHERE track_id = ?", (track_id,))
+        conn.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
+
+    if file_path and os.path.exists(file_path):
+        os.unlink(file_path)
+        logger.info("Deleted file: %s", file_path)
+    logger.info("User %s deleted track: %s", user["id"], track_id)
+    return {"ok": True}
