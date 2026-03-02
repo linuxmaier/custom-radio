@@ -48,7 +48,7 @@
           <div class="alert warning" style="margin-bottom:0.75rem;">
             <span x-text="loginMsg"></span>
           </div>
-          <button class="btn secondary" @click="loginState = 'email'; loginError = ''">Try a different email</button>
+          <button class="btn secondary" @click="loginState = 'email'; loginError = ''">← Back</button>
         </div>
 
         <!-- Step 2b: code entry -->
@@ -1182,7 +1182,12 @@
             if (!groups[t.submitter]) groups[t.submitter] = [];
             groups[t.submitter].push(t);
           }
-          return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+          const myName = this.user?.name;
+          return Object.entries(groups).sort((a, b) => {
+            if (a[0] === myName) return -1;
+            if (b[0] === myName) return 1;
+            return a[0].localeCompare(b[0]);
+          });
         },
 
         async loadTracks() {

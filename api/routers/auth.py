@@ -50,17 +50,63 @@ _VERIFY_HTML = """\
       font-weight: 700;
       letter-spacing: 0.2em;
       color: #6c63ff;
-      margin: 1.5rem 0;
+      margin: 1rem 0;
       font-family: monospace;
     }}
     p {{ color: #94a3b8; font-size: 0.9rem; margin: 0.35rem 0; }}
+    .copy-btn {{
+      background: #6c63ff;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.5rem 1.25rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      margin: 0.5rem 0 1.25rem;
+    }}
+    .copy-btn:active {{ opacity: 0.8; }}
+    .instructions {{
+      max-width: 360px;
+      text-align: left;
+      background: #1a1d27;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin-top: 1rem;
+    }}
+    .instructions p {{ margin: 0.4rem 0; }}
+    .section-label {{ color: #e2e8f0; font-weight: 600; margin-top: 0.75rem !important; }}
+    .instructions a {{ color: #6c63ff; }}
   </style>
 </head>
 <body>
   <h1>Your sign-in code</h1>
   <div class="code">{code_display}</div>
-  <p>Enter this code in the {station_name} app.</p>
+  <button class="copy-btn" id="copyBtn" onclick="copyCode()">Copy code</button>
   <p>This code expires in {ttl} minutes.</p>
+  <div class="instructions">
+    <p class="section-label">On your phone:</p>
+    <p>Open the {station_name} app and enter this code. If you haven't installed it
+    yet, <a href="{base_url}">open the station</a> in your browser, tap
+    <strong>Share &rarr; Add to Home Screen</strong>, then open the app and enter the code.</p>
+    <p class="section-label">On a computer:</p>
+    <p><a href="{base_url}">Return to {station_name}</a>, enter your email address,
+    then enter this code when prompted.</p>
+  </div>
+  <script>
+    function copyCode() {{
+      navigator.clipboard.writeText('{code_raw}').then(function() {{
+        var btn = document.getElementById('copyBtn');
+        btn.textContent = 'Copied!';
+        setTimeout(function() {{ btn.textContent = 'Copy code'; }}, 2000);
+      }}).catch(function() {{
+        var el = document.querySelector('.code');
+        var range = document.createRange();
+        range.selectNode(el);
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+      }});
+    }}
+  </script>
 </body>
 </html>"""
 
@@ -318,10 +364,13 @@ def verify_token(token: str) -> HTMLResponse:
         )
 
     code_display = code_str[:3] + " " + code_str[3:]
+    protocol = "http" if IS_LOCAL else "https"
     html = _VERIFY_HTML.format(
         code_display=code_display,
+        code_raw=code_str,
         station_name=STATION_NAME,
         ttl=CLAIM_CODE_TTL_MINUTES,
+        base_url=f"{protocol}://{_hostname}",
     )
     return HTMLResponse(content=html)
 
