@@ -92,5 +92,24 @@
     await sub.unsubscribe();
   }
 
-  window.pushHelpers = { isSupported, needsInstall, isSubscribed, subscribe, unsubscribe };
+  // Silently re-POST the browser's current subscription to the server on page
+  // load. Handles the case where the server removed a stale endpoint (410) but
+  // the browser-side subscription is still valid — the app would show
+  // "subscribed" while the server has no record of the endpoint.
+  async function syncSubscription() {
+    if (!isSupported()) return;
+    try {
+      var reg = await getRegistration();
+      var sub = await reg.pushManager.getSubscription();
+      if (!sub) return;
+      var json = sub.toJSON();
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth }),
+      });
+    } catch (_) {}
+  }
+
+  window.pushHelpers = { isSupported, needsInstall, isSubscribed, subscribe, unsubscribe, syncSubscription };
 })();
