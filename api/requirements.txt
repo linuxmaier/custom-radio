@@ -46,3 +46,5 @@ yt-dlp>=2026.2.21
 bgutil-ytdlp-pot-provider
 # Web Push notifications via VAPID (optional — no-op if VAPID_PRIVATE_KEY unset)
 pywebpush>=2.0.0
+# WebAuthn/passkey authentication
+webauthn>=2.0.0
