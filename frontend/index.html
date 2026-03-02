@@ -1421,9 +1421,8 @@
         },
 
         async loadTracks() {
-          if (this._loaded) return;
+          if (!this._loaded) this.loading = true;
           this._loaded = true;
-          this.loading = true;
           try {
             const res = await fetch('/api/public-library');
             const data = await res.json();
@@ -1478,7 +1477,10 @@
         },
 
         async loadAdmin() {
-          if (this._loaded) return;
+          if (this._loaded) {
+            if (this.authed) await Promise.all([this.loadLibrary(), this.loadUsers()]);
+            return;
+          }
           this._loaded = true;
           if (this.tokenInput) {
             await this.login();
