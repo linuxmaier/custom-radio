@@ -127,6 +127,53 @@ _VERIFY_HTML = """\
 </body>
 </html>"""
 
+_REVEAL_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sign In — {station_name}</title>
+  <style>
+    body {{
+      font-family: system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      text-align: center;
+      padding: 1.5rem;
+      box-sizing: border-box;
+    }}
+    h1 {{ font-size: 1.4rem; font-weight: 600; margin-bottom: 0.5rem; }}
+    p {{ color: #94a3b8; font-size: 0.9rem; margin: 0.35rem 0; }}
+    .reveal-btn {{
+      background: #6c63ff;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem 2rem;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 1.5rem;
+    }}
+    .reveal-btn:active {{ opacity: 0.8; }}
+  </style>
+</head>
+<body>
+  <h1>Sign in to {station_name}</h1>
+  <p>Tap the button below to get your sign-in code.</p>
+  <p>This link expires in {ttl} minutes.</p>
+  <form method="POST" action="{action_url}">
+    <button class="reveal-btn" type="submit">Get my sign-in code</button>
+  </form>
+</body>
+</html>"""
+
 _ERROR_HTML = """\
 <!DOCTYPE html>
 <html lang="en">
@@ -380,28 +427,56 @@ def request_access(body: RequestAccessBody) -> dict:
     return result
 
 
-@router.get("/verify")
-def verify_token(token: str) -> HTMLResponse:
-    """Validate magic link token, generate a claim code, return HTML page."""
-    token_hash = _hash(token)
+def _verify_token_check(token_hash: str) -> HTMLResponse | None:
+    """Validate a token hash. Returns an error HTMLResponse if invalid, None if OK."""
     with db() as conn:
         row = conn.execute("SELECT * FROM auth_tokens WHERE token_hash = ?", (token_hash,)).fetchone()
-        if not row:
-            return HTMLResponse(
-                _ERROR_HTML.format(reason="not found", station_name=STATION_NAME),
-                status_code=404,
-            )
-        if row["used"]:
-            return HTMLResponse(
-                _ERROR_HTML.format(reason="already used", station_name=STATION_NAME),
-                status_code=410,
-            )
-        if _is_expired(row["expires_at"]):
-            return HTMLResponse(
-                _ERROR_HTML.format(reason="expired", station_name=STATION_NAME),
-                status_code=410,
-            )
+    if not row:
+        return HTMLResponse(
+            _ERROR_HTML.format(reason="not found", station_name=STATION_NAME),
+            status_code=404,
+        )
+    if row["used"]:
+        return HTMLResponse(
+            _ERROR_HTML.format(reason="already used", station_name=STATION_NAME),
+            status_code=410,
+        )
+    if _is_expired(row["expires_at"]):
+        return HTMLResponse(
+            _ERROR_HTML.format(reason="expired", station_name=STATION_NAME),
+            status_code=410,
+        )
+    return None
 
+
+@router.get("/verify")
+def verify_token_get(token: str) -> HTMLResponse:
+    """Validate magic link token and show a button — does NOT consume the token.
+    Keeps link prefetchers (iMessage, email clients) from burning single-use tokens."""
+    token_hash = _hash(token)
+    err = _verify_token_check(token_hash)
+    if err:
+        return err
+    protocol = "http" if IS_LOCAL else "https"
+    action_url = f"{protocol}://{_hostname}/api/auth/verify?token={token}"
+    html = _REVEAL_HTML.format(
+        station_name=STATION_NAME,
+        ttl=MAGIC_LINK_TTL_MINUTES,
+        action_url=action_url,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.post("/verify")
+def verify_token_post(token: str) -> HTMLResponse:
+    """Consume the magic link token, generate a claim code, and show it."""
+    token_hash = _hash(token)
+    err = _verify_token_check(token_hash)
+    if err:
+        return err
+
+    with db() as conn:
+        row = conn.execute("SELECT * FROM auth_tokens WHERE token_hash = ?", (token_hash,)).fetchone()
         # Mark token used
         conn.execute("UPDATE auth_tokens SET used = 1 WHERE token_hash = ?", (token_hash,))
 
