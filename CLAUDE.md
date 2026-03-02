@@ -36,7 +36,7 @@ The `bgutil-provider` service uses the upstream `brainicism/bgutil-ytdlp-pot-pro
 ## API Layout
 
 Routers in `api/routers/`:
-- `auth.py`     — POST /auth/request-access, GET /auth/verify, POST /auth/claim, POST /auth/logout, POST /auth/bootstrap, GET/PATCH /auth/me, GET/POST /auth/users, POST /auth/users/{id}/approve|reject, DELETE /auth/users/{id}
+- `auth.py`     — POST /auth/request-access, GET+POST /auth/verify, POST /auth/claim, POST /auth/logout, POST /auth/bootstrap, GET/PATCH /auth/me, GET /auth/claimable-names, GET/POST /auth/users, POST /auth/users/{id}/approve|reject, DELETE /auth/users/{id}, POST /auth/passkey/register/begin|complete, POST /auth/passkey/authenticate/begin|complete, GET /auth/passkey/list, DELETE /auth/passkey/{credential_id}
 - `submit.py`   — POST /submit, GET /check-duplicate, GET /submitters, DELETE /track/{id} (own-track deletion)
 - `internal.py` — GET /internal/next-track (returns annotate URI with title/artist from DB), POST /internal/track-started/{id}
 - `admin.py`    — GET/POST /admin/config, POST /admin/skip, DELETE /admin/track/{id}, GET /admin/youtube-cookies/status, POST /admin/youtube-cookies
@@ -55,9 +55,11 @@ Admin endpoints are authenticated via the `X-Admin-Token` request header (value 
 
 ## Database
 
-SQLite at `/data/radio.db` (Docker volume). Schema initialised in `database.py:init_db()`. Tables: `tracks`, `play_log`, `jobs`, `config`, `push_subscriptions`, `users`, `auth_tokens`, `claim_codes`, `sessions`.
+SQLite at `/data/radio.db` (Docker volume). Schema initialised in `database.py:init_db()`. Tables: `tracks`, `play_log`, `jobs`, `config`, `push_subscriptions`, `users`, `auth_tokens`, `claim_codes`, `sessions`, `passkey_credentials`, `passkey_challenges`.
 
 Auth tables added in Phase 1 per-user auth: `users` (email, name, status: pending/approved/rejected), `auth_tokens` (magic link tokens; 15-min TTL, single-use), `claim_codes` (6-digit bridge codes for cross-browser PWA cookie scoping; 5-min TTL, single-use), `sessions` (httpOnly cookie sessions; 30-day sliding TTL). All token/code values are stored as SHA-256 hashes. Foreign keys with ON DELETE CASCADE propagate user deletion to all auth rows. `tracks.user_id` and `push_subscriptions.user_id` are nullable FK references to `users.id` (added via ALTER migration).
+
+Auth tables added in Phase 2 passkeys: `passkey_credentials` (id: credential_id b64url PK, user_id FK, public_key blob, sign_count, aaguid, created_at, last_used_at), `passkey_challenges` (challenge b64url PK, user_id nullable FK, type: `registration`|`authentication`, expires_at; 5-min TTL; deleted on consume or at next challenge insert).
 
 Config keys: `programming_mode`, `rotation_tracks_per_block`, `rotation_current_submitter_idx`, `rotation_block_start_log_id`, `last_returned_track_id`, `feature_min/max_*` (4 audio features).
 
@@ -104,7 +106,7 @@ The frontend is a single-page app (`frontend/index.html`) using Alpine.js v3 wit
 **Auth state in `shell()`:**
 - `user` — `{id, email, name}` or `null`; `authChecked` — `false` until `GET /api/auth/me` resolves (prevents flash of unauthed content)
 - `loginState` — `'email'` | `'pending'` | `'code'`; `loginEmail`, `loginMsg`, `loginError`, `loginBusy`, `claimCode`
-- `setupName`, `setupError`, `setupBusy` — for display-name-setup view shown on first login
+- `setupName`, `setupError`, `setupBusy` — for display-name-setup view shown on first login; `claimableNames: []` — populated by `GET /api/auth/claimable-names` when setup view appears; allows existing submitters to reclaim their track history by picking their name
 
 **Auth flow in `init()`:**
 - `init()` is `async`; `_initRunning` guard at the top prevents double-execution (Alpine calls `init()` twice: once for the `init` method on the data object, once for `x-init="init()"` on `<body>`)
@@ -113,8 +115,10 @@ The frontend is a single-page app (`frontend/index.html`) using Alpine.js v3 wit
 - `refresh()` (status poller) handles 401 by clearing `user` and setting `view = 'login'`
 
 **Views added by auth:**
-- `login` — three states: email entry → `POST /api/auth/request-access` (approved users get magic link; others see pending message); code entry → `POST /api/auth/claim` → cookie set, `needs_name` check
-- `setup` — display name input, shown after first login when `user.name === null` → `PATCH /api/auth/me`
+- `login` — three states: email entry → `POST /api/auth/request-access` (approved users get magic link; others see pending message); code entry → `POST /api/auth/claim` → cookie set, `needs_name` check. Passkey users can sign in without email via the passkey flow (no code needed).
+- `setup` — display name input, shown after first login when `user.name === null` → `PATCH /api/auth/me`. Includes a `<datalist>` of claimable submitter names from `GET /api/auth/claimable-names`; picking an existing name backfills `tracks.user_id` for all matching unclaimed tracks.
+
+**Alpine.js scope in nested `x-data`:** nested components (`submitView()`, `libraryView()`, `adminView()`) access parent `shell()` properties via direct property names (e.g. `user`, `nowPlaying`). Do NOT use `$root.user` — `$root` in Alpine v3 does not reliably expose parent `x-data` properties in nested scopes.
 
 **Key player behaviours:**
 - **Resume always reconnects to live**: resume deliberately discards the buffered stream by reassigning `audio.src` with a cache-busting timestamp (`?t=Date.now()`). No "resume from where you left off."
@@ -153,6 +157,8 @@ The admin view also has a **YouTube Cookies** card that shows whether a cookies 
 - **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}`, `${STATION_NAME}` (for `auth_basic`), and `${PUBLIC_STREAM_TOKEN}` (for the public stream URL route). The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. All three vars must be set in docker-compose.yml for nginx (`PUBLIC_STREAM_TOKEN` defaults to empty string via `${PUBLIC_STREAM_TOKEN:-}`, which disables the public stream route). The `noauth` templates (`noauth.conf.template`, `local-noauth.conf.template`) do not use `${STATION_NAME}` (no `auth_basic` directive), but still need `${SERVER_HOSTNAME}` and `${PUBLIC_STREAM_TOKEN}`.
 - **Two nginx auth modes**: Basic Auth mode uses `default.conf.template` (production) or `local.conf.template` (local) — site-wide HTTP Basic Auth prompt. App Auth mode uses `noauth.conf.template` (production) or `local-noauth.conf.template` (local) — no Basic Auth prompt; all auth is handled by the API session cookie. To switch modes, change the volume mount in `docker-compose.yml` (and override file for local) to point to the desired template. App Auth mode requires the database to have at least one approved user (see bootstrap step).
 - **nginx `auth_basic off` for PWA assets is intentional**: `/sw.js`, `/api/manifest.json`, and icon PNGs are deliberately exempted from HTTP Basic Auth in both `default.conf.template` and `local.conf.template`. Browsers and mobile OSes fetch these at the system level (not through a user session) when installing a PWA or displaying notifications — they do not carry stored Basic Auth credentials. Do not remove these exemptions. The exposed content is non-sensitive (a service worker, a manifest with the station name, and static images). The `noauth` templates have no `auth_basic` at all, so no exemptions are needed there.
+
+- **Magic link prefetcher protection**: `GET /auth/verify` validates the token and returns a "Get my sign-in code" button page — it does NOT consume the token. `POST /auth/verify` (the button's form target) consumes the token and returns the claim code page. This split prevents iMessage, Gmail, and other email/messaging clients from silently burning single-use tokens via link prefetch GETs before the user taps the link.
 
 - **`file.filename` is a string, not a bool**: In `api/routers/submit.py`, `has_file = file is not None and file.filename` evaluates to the filename string when a file is provided. Always wrap in `bool()` before using in arithmetic (e.g. `sum()`), otherwise a `TypeError: unsupported operand type(s) for +: 'int' and 'str'` will be raised.
 - **API container needs at least 1g mem_limit**: librosa feature extraction is memory-intensive and will cause an OOM kill if the API container is constrained to 600m. The `mem_limit` in `docker-compose.yml` is set to `1g` — do not lower it. OOM kills leave jobs in `processing` state (handled by `reset_stuck_jobs()` on next startup, but the track has to be fully reprocessed).

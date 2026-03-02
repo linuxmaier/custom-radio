@@ -36,11 +36,6 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # Drop known scanner/bot traffic silently.
-    location ~* ^/(wp-admin|wordpress|\.env|\.git)(/|$) {
-        return 444;
-    }
-
     location = /ping {
         return 200 "ok";
         add_header Content-Type text/plain;
@@ -94,7 +89,16 @@ server {
     location = /library.html { return 301 /#library; }
     location = /admin.html   { return 301 /#admin; }
 
+    location = / {
+        try_files /index.html =404;
+    }
+
+    location /static/ {
+        try_files $uri =404;
+    }
+
+    # Catch-all: silently drop any path not matched by an explicit location block above.
     location / {
-        try_files $uri $uri.html $uri/ =404;
+        return 444;
     }
 }
