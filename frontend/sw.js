@@ -34,7 +34,8 @@ self.addEventListener('pushsubscriptionchange', (e) => {
   var oldSub = e.oldSubscription;
   if (!oldSub) return;
   e.waitUntil(
-    self.registration.pushManager.subscribe(oldSub.options)
+    self.registration.pushManager
+      .subscribe(oldSub.options)
       .then((newSub) => {
         var json = newSub.toJSON();
         return fetch('/api/push/subscribe', {
@@ -43,7 +44,7 @@ self.addEventListener('pushsubscriptionchange', (e) => {
           body: JSON.stringify({ endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth }),
         });
       })
-      .catch(() => {}) // swallow — page-load sync will catch any remaining gap
+      .catch(() => {}), // swallow — page-load sync will catch any remaining gap
   );
 });
 
