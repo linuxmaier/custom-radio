@@ -1,9 +1,11 @@
 import os
 
 from database import db
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+from routers.auth import require_user
 
 router = APIRouter()
 
@@ -68,7 +70,7 @@ class SubscriptionRequest(BaseModel):
 
 
 @router.post("/push/subscribe")
-def subscribe(req: SubscriptionRequest):
+def subscribe(req: SubscriptionRequest, user: dict = Depends(require_user)):
     """Upsert a push subscription."""
     with db() as conn:
         conn.execute(
@@ -83,7 +85,7 @@ def subscribe(req: SubscriptionRequest):
 
 
 @router.post("/push/unsubscribe")
-def unsubscribe(req: SubscriptionRequest):
+def unsubscribe(req: SubscriptionRequest, user: dict = Depends(require_user)):
     """Remove a push subscription."""
     with db() as conn:
         conn.execute("DELETE FROM push_subscriptions WHERE endpoint=?", (req.endpoint,))

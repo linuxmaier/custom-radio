@@ -2,7 +2,9 @@ import logging
 import os
 
 from database import db
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from routers.auth import require_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -26,7 +28,7 @@ def _track_row_to_dict(row) -> dict:
 
 
 @router.get("/status")
-def get_status():
+def get_status(user: dict = Depends(require_user)):
     """Now playing, recent tracks, and pending count."""
     with db() as conn:
         # Currently playing: last entry in play_log
@@ -97,7 +99,7 @@ def get_status():
 
 
 @router.get("/library")
-def get_library():
+def get_library(user: dict = Depends(require_user)):
     """All tracks with their status."""
     with db() as conn:
         rows = conn.execute("SELECT * FROM tracks ORDER BY submitted_at DESC").fetchall()
@@ -105,13 +107,13 @@ def get_library():
 
 
 @router.get("/public-library")
-def get_public_library():
+def get_public_library(user: dict = Depends(require_user)):
     """Ready tracks with play counts, ordered by submitter then title."""
     with db() as conn:
         rows = conn.execute(
             """
             SELECT t.id, t.title, t.artist, t.submitter, t.submitted_at, t.duration_s,
-                   COUNT(pl.id) AS play_count
+                   t.user_id, COUNT(pl.id) AS play_count
             FROM tracks t
             LEFT JOIN play_log pl ON pl.track_id = t.id
             WHERE t.status = 'ready'
@@ -129,6 +131,7 @@ def get_public_library():
                 "submitted_at": r["submitted_at"],
                 "duration_s": r["duration_s"],
                 "play_count": r["play_count"],
+                "user_id": r["user_id"],
             }
             for r in rows
         ]
@@ -136,14 +139,14 @@ def get_public_library():
 
 
 @router.get("/submitters")
-def list_submitters():
+def list_submitters(user: dict = Depends(require_user)):
     with db() as conn:
         rows = conn.execute("SELECT DISTINCT submitter FROM tracks ORDER BY submitter").fetchall()
     return {"submitters": [r["submitter"] for r in rows]}
 
 
 @router.get("/track/{track_id}")
-def get_track(track_id: str):
+def get_track(track_id: str, user: dict = Depends(require_user)):
     """Single track details (for polling submission status)."""
     with db() as conn:
         row = conn.execute("SELECT * FROM tracks WHERE id=?", (track_id,)).fetchone()

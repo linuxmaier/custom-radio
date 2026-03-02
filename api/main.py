@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from database import init_db
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import admin, internal, push, status, submit
+from routers import admin, auth, internal, push, status, submit
 from worker import reset_stuck_jobs, start_worker, stop_worker
 
 logging.basicConfig(
@@ -35,10 +35,12 @@ _origins = [f"https://{_hostname}"] if _hostname else ["http://localhost", "http
 app.add_middleware(
     CORSMiddleware,  # ty: ignore[invalid-argument-type]
     allow_origins=_origins,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE", "PATCH"],
     allow_headers=["Content-Type", "X-Admin-Token"],
 )
 
+app.include_router(auth.router)
 app.include_router(submit.router)
 app.include_router(internal.router)
 app.include_router(admin.router)
