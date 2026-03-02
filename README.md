@@ -19,7 +19,7 @@ Five Docker services:
 The station supports two auth modes — choose one before setting up:
 
 - **Basic Auth mode** (default): The entire site is protected by a single shared HTTP Basic Auth username/password (one password for everyone). Simple but shows an ugly browser prompt and has no per-user identity.
-- **App Auth mode**: Application-level auth with per-user accounts, magic link email sign-in, and a session cookie. Requires SMTP to be configured for sending sign-in emails. Provides per-user identity (submitter name pre-populated, own-track deletion). Recommended for new deployments.
+- **App Auth mode**: Application-level auth with per-user accounts, magic link email sign-in, passkey (WebAuthn/Touch ID/Face ID) sign-in, and a session cookie. Requires SMTP to be configured for sending sign-in emails. Provides per-user identity (submitter name pre-populated, own-track deletion). Recommended for new deployments.
 
 ### Prerequisites
 
@@ -140,17 +140,25 @@ All public endpoints are proxied through nginx at `/api/`.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/auth/request-access` | Request access or send magic link (App Auth mode) |
-| `GET` | `/api/auth/verify` | Validate magic link token → show 6-digit claim code page (App Auth mode) |
+| `GET` | `/api/auth/verify` | Validate magic link token; show "Get my sign-in code" button — does **not** consume the token (prefetcher-safe) |
+| `POST` | `/api/auth/verify` | Consume magic link token → show 6-digit claim code page |
 | `POST` | `/api/auth/claim` | Exchange claim code for session cookie (App Auth mode) |
 | `POST` | `/api/auth/logout` | Clear session cookie (App Auth mode) |
 | `POST` | `/api/auth/bootstrap` | Create first user (returns 403 once any user exists) (App Auth mode) |
 | `GET` | `/api/auth/me` | Current user info (session-required) |
-| `PATCH` | `/api/auth/me` | Update display name (session-required) |
+| `PATCH` | `/api/auth/me` | Update display name (session-required); backfills `tracks.user_id` for matching unclaimed tracks |
+| `GET` | `/api/auth/claimable-names` | Submitter names not yet claimed by any approved user (session-required) |
 | `GET` | `/api/auth/users` | List all users (admin token required) |
 | `POST` | `/api/auth/users` | Create pre-approved user (admin token required) |
 | `POST` | `/api/auth/users/{id}/approve` | Approve a pending user + send welcome magic link (admin token required) |
 | `POST` | `/api/auth/users/{id}/reject` | Reject a pending user (admin token required) |
 | `DELETE` | `/api/auth/users/{id}` | Delete a user and all their sessions (admin token required) |
+| `POST` | `/api/auth/passkey/register/begin` | Start passkey registration (session-required; returns WebAuthn options) |
+| `POST` | `/api/auth/passkey/register/complete` | Complete passkey registration (session-required) |
+| `POST` | `/api/auth/passkey/authenticate/begin` | Start passkey sign-in; returns challenge options |
+| `POST` | `/api/auth/passkey/authenticate/complete` | Verify passkey assertion → set session cookie |
+| `GET` | `/api/auth/passkey/list` | List registered passkeys for current user (session-required) |
+| `DELETE` | `/api/auth/passkey/{credential_id}` | Remove a passkey (session-required) |
 | `POST` | `/api/submit` | Submit a track (multipart form); optional `comment` field (max 280 chars) shown on the Now Playing page and in push notifications |
 | `DELETE` | `/api/track/{id}` | Delete own track (session-required in App Auth mode) |
 | `GET` | `/api/status` | Now playing + recent 10 tracks + pending count + `station_name` + `public_stream_url` (if `PUBLIC_STREAM_TOKEN` is set) |
@@ -365,7 +373,7 @@ family-radio/
 │   ├── push.py             # Web Push: send_push_to_all(); no-op if VAPID unset
 │   ├── email_utils.py      # Generic send_email() helper (used by auth for magic links)
 │   └── routers/
-│       ├── auth.py         # /auth/* — magic link, claim codes, session cookies, user management
+│       ├── auth.py         # /auth/* — magic link, passkeys (WebAuthn), claim codes, session cookies, user management
 │       ├── submit.py
 │       ├── internal.py
 │       ├── admin.py
