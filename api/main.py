@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from database import init_db
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from metrics import start_metrics_poller, stop_metrics_poller
 from routers import admin, auth, internal, push, status, submit
 from worker import reset_stuck_jobs, start_worker, stop_worker
 
@@ -22,9 +23,11 @@ async def lifespan(app: FastAPI):
     init_db()
     reset_stuck_jobs()
     start_worker()
+    start_metrics_poller()
     yield
     logger.info("Shutting down %s API", _station_name)
     stop_worker()
+    stop_metrics_poller()
 
 
 app = FastAPI(title=os.getenv("STATION_NAME", "Family Radio") + " API", lifespan=lifespan)

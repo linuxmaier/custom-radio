@@ -14,7 +14,7 @@ venv := .venv
 
 # type-check deps: lightweight packages ty needs for import resolution
 # (excludes librosa and its heavy compiled transitive deps — suppressed inline)
-type_deps := fastapi==0.129.2 pydantic==2.12.5 'pywebpush>=2.0.0' aiofiles==24.1.0 numpy==1.26.4 'webauthn>=2.0.0'
+type_deps := fastapi==0.129.2 pydantic==2.12.5 'pywebpush>=2.0.0' aiofiles==24.1.0 numpy==1.26.4 'webauthn>=2.0.0' 'boto3>=1.35.0'
 
 $(venv)/.installed: api/requirements.txt
 	uv venv $(venv) --python 3.12 -q
