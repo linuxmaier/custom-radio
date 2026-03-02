@@ -3,6 +3,7 @@ import os
 
 from database import db
 from fastapi import APIRouter, Depends, HTTPException
+from metrics import get_listener_count
 
 from routers.auth import require_user
 
@@ -91,6 +92,7 @@ def get_status(user: dict = Depends(require_user)):
         "recent": recent,
         "pending_count": pending_count,
         "station_name": os.getenv("STATION_NAME", "Family Radio"),
+        "listener_count": get_listener_count(),
     }
     token = os.getenv("PUBLIC_STREAM_TOKEN", "")
     if token:
