@@ -418,13 +418,36 @@ def get_me(user: dict = Depends(require_user)) -> dict:
     return {"id": user["id"], "email": user["email"], "name": user["name"]}
 
 
+@router.get("/claimable-names")
+def claimable_names(user: dict = Depends(require_user)) -> dict:
+    """Return distinct submitter names not already claimed by an approved user."""
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT submitter FROM tracks"
+            " WHERE submitter NOT IN"
+            " (SELECT name FROM users WHERE name IS NOT NULL AND status = 'approved')"
+            " ORDER BY submitter"
+        ).fetchall()
+    return {"names": [r["submitter"] for r in rows]}
+
+
 @router.patch("/me")
 def update_me(body: UpdateNameBody, user: dict = Depends(require_user)) -> dict:
     name = body.name.strip()[:50]
     if not name:
         raise HTTPException(400, "Name cannot be empty")
     with db() as conn:
+        taken = conn.execute(
+            "SELECT id FROM users WHERE name = ? AND id != ? AND status = 'approved'",
+            (name, user["id"]),
+        ).fetchone()
+        if taken:
+            raise HTTPException(409, "That name is already taken by another member")
         conn.execute("UPDATE users SET name = ? WHERE id = ?", (name, user["id"]))
+        conn.execute(
+            "UPDATE tracks SET user_id = ? WHERE submitter = ? AND user_id IS NULL",
+            (user["id"], name),
+        )
     return {"ok": True, "name": name}
 
 

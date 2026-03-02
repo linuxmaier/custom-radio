@@ -89,8 +89,18 @@
         <div class="form-group">
           <label for="setupName">Display name</label>
           <input id="setupName" type="text" x-model="setupName"
+                 list="claimable-names-list"
                  @keydown.enter="saveDisplayName()"
-                 placeholder="e.g. Mom, Dad, Grandpa…" maxlength="50" />
+                 placeholder="e.g. Mom, Dad, Grandpa…" maxlength="50"
+                 autocomplete="off" />
+          <datalist id="claimable-names-list">
+            <template x-for="n in claimableNames" :key="n">
+              <option :value="n"></option>
+            </template>
+          </datalist>
+          <p x-show="claimableNames.length > 0" style="color:var(--muted); font-size:0.8rem; margin:0.4rem 0 0.75rem;">
+            Pick your name from the list to claim your existing songs.
+          </p>
         </div>
         <div class="alert error" x-show="setupError" x-cloak x-text="setupError"
              style="margin-bottom:0.75rem;"></div>
@@ -152,7 +162,7 @@
         <form @submit.prevent="submitSong">
           <div class="form-group">
             <label>Submitting as</label>
-            <p style="font-weight:600; margin:0;" x-text="$root.user?.name || $root.user?.email"></p>
+            <p style="font-weight:600; margin:0;" x-text="user?.name || user?.email"></p>
           </div>
 
           <div x-show="tab === 'file'">
@@ -341,7 +351,7 @@
                 <div x-text="formatDate(track.submitted_at)"></div>
                 <div x-text="track.play_count === 1 ? '1 play' : track.play_count + ' plays'"></div>
               </div>
-              <button x-show="track.user_id && track.user_id === $root.user?.id"
+              <button x-show="track.user_id && track.user_id === user?.id"
                       class="btn danger" style="padding:0.35rem 0.75rem; font-size:0.8rem; flex-shrink:0;"
                       @click="deleteTrack(track.id)" x-cloak>✕</button>
             </div>
@@ -558,6 +568,7 @@
         setupName: '',
         setupError: '',
         setupBusy: false,
+        claimableNames: [],
 
         // player state
         view: 'playing',
@@ -611,6 +622,12 @@
           this.$watch('view', (v) => {
             if (v === 'library') this.$dispatch('load-library');
             if (v === 'admin')   this.$dispatch('load-admin');
+            if (v === 'setup') {
+              fetch('/api/auth/claimable-names')
+                .then(r => r.ok ? r.json() : { names: [] })
+                .then(d => { this.claimableNames = d.names || []; })
+                .catch(() => {});
+            }
           });
 
           const ph = window.pushHelpers;
@@ -1073,7 +1090,7 @@
           this.warning = '';
           this.successTrackId = '';
 
-          const submitter = (this.$root.user?.name || this.$root.user?.email || '').trim();
+          const submitter = (this.user?.name || this.user?.email || '').trim();
           if (!submitter) {
             this.errorMsg = 'Could not determine your name. Please log out and sign in again.';
             return;
