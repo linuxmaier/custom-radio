@@ -755,6 +755,7 @@
             this.pushSupported = true;
             this.pushNeedsInstall = ph.needsInstall();
             ph.isSubscribed().then(v => { this.pushSubscribed = v; });
+            ph.syncSubscription(); // re-sync endpoint with server on every page load
           }
 
           if ('serviceWorker' in navigator) {
