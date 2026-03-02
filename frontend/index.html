@@ -41,6 +41,14 @@
             <span x-show="loginBusy" class="spinner"></span>
             <span x-text="loginBusy ? 'Sending…' : 'Continue'"></span>
           </button>
+          <div x-show="passkeyAvailable" x-cloak style="margin-top:0.75rem; text-align:center;">
+            <div style="color:var(--muted); font-size:0.8rem; margin-bottom:0.5rem;">— or —</div>
+            <button class="btn secondary" style="width:100%;"
+                    @click="loginWithPasskey()" :disabled="loginBusy">
+              <span x-show="loginBusy" class="spinner"></span>
+              <span x-text="loginBusy ? 'Signing in…' : 'Sign in with Passkey'"></span>
+            </button>
+          </div>
         </div>
 
         <!-- Step 2a: pending approval -->
@@ -112,10 +120,29 @@
     </div>
     <!-- ── /Setup view ── -->
 
+    <!-- ── Passkey setup view (shown after first login name-setup) ── -->
+    <div x-show="view === 'passkey-setup'" x-cloak>
+      <h1>Enable Sign-in with Biometrics</h1>
+      <p class="subtitle">Use your fingerprint, face, or device PIN to sign in faster next time.</p>
+
+      <div class="card">
+        <div class="alert error" x-show="passError" x-cloak x-text="passError"
+             style="margin-bottom:0.75rem;"></div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button class="btn" @click="registerPasskey()" :disabled="passBusy">
+            <span x-show="passBusy" class="spinner"></span>
+            <span x-text="passBusy ? 'Setting up…' : 'Enable on This Device'"></span>
+          </button>
+          <button class="btn secondary" @click="skipPasskeySetup()" :disabled="passBusy">Not now</button>
+        </div>
+      </div>
+    </div>
+    <!-- ── /Passkey setup view ── -->
+
     <!-- User bar (shown on all non-auth views) -->
-    <div x-show="user && view !== 'login' && view !== 'setup'"
+    <div x-show="user && view !== 'login' && view !== 'setup' && view !== 'passkey-setup'"
          style="text-align:right; font-size:0.8rem; color:var(--muted); margin-bottom:0.5rem;" x-cloak>
-      <span x-text="user?.name || user?.email"></span>
+      <a href="#profile" style="color:inherit;" x-text="user?.name || user?.email"></a>
       &nbsp;·&nbsp;
       <a href="#" @click.prevent="logout()" style="color:var(--accent);">Logout</a>
     </div>
@@ -508,6 +535,60 @@
     </div>
     <!-- ── /Admin view ── -->
 
+    <!-- ── Profile view ── -->
+    <div x-show="view === 'profile'"
+         @load-profile.window="loadPasskeys()">
+      <h1>Profile</h1>
+      <p class="subtitle">Manage your sign-in methods and account settings.</p>
+
+      <div class="card">
+        <h2>Sign-in Methods</h2>
+        <div x-show="!passkeyAvailable" style="color:var(--muted); font-size:0.875rem; margin-bottom:0.75rem;">
+          This device does not support passkeys.
+        </div>
+        <div x-show="passError" class="alert error" x-cloak x-text="passError"
+             style="margin-bottom:0.75rem;"></div>
+        <div x-show="passkeys.length === 0 && passkeyAvailable" style="color:var(--muted); font-size:0.875rem; margin-bottom:0.75rem;">
+          No passkeys registered yet.
+        </div>
+        <template x-for="pk in passkeys" :key="pk.id">
+          <div class="track-item">
+            <div class="track-meta">
+              <div class="track-title">Passkey</div>
+              <div class="track-sub">
+                Added <span x-text="new Date(pk.created_at).toLocaleDateString()"></span>
+                <span x-show="pk.last_used_at">
+                  · Last used <span x-text="pk.last_used_at ? new Date(pk.last_used_at).toLocaleDateString() : ''"></span>
+                </span>
+              </div>
+            </div>
+            <button class="btn danger" style="padding:0.35rem 0.75rem; font-size:0.8rem; flex-shrink:0;"
+                    @click="deletePasskey(pk.id)">Remove</button>
+          </div>
+        </template>
+        <div x-show="passkeyAvailable" style="margin-top:0.75rem;">
+          <button class="btn" @click="registerPasskey()" :disabled="passBusy">
+            <span x-show="passBusy" class="spinner"></span>
+            <span x-text="passBusy ? 'Setting up…' : 'Add This Device'"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Account</h2>
+        <div class="form-group">
+          <label>Display name</label>
+          <p style="margin:0; font-weight:600;" x-text="user?.name || '(not set)'"></p>
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <p style="margin:0; color:var(--muted);" x-text="user?.email"></p>
+        </div>
+        <button class="btn secondary" @click="logout()">Sign Out</button>
+      </div>
+    </div>
+    <!-- ── /Profile view ── -->
+
   </div>
 
   <!-- Persistent audio element (lives in shell scope, survives all navigation) -->
@@ -553,6 +634,34 @@
       console.error = _stamp(console.error.bind(console));
     })());
 
+    function _b64urlDecode(s) {
+      const b = s.replace(/-/g,'+').replace(/_/g,'/');
+      const p = b + '='.repeat((4 - b.length % 4) % 4);
+      return Uint8Array.from(atob(p), c => c.charCodeAt(0));
+    }
+    function _b64urlEncode(buf) {
+      const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+      return btoa(String.fromCharCode(...b)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+    }
+    function _coerceOptions(obj) {
+      // Recursively convert base64url strings named 'challenge' or 'id' to Uint8Array
+      if (!obj || typeof obj !== 'object') return obj;
+      if (Array.isArray(obj)) return obj.map(_coerceOptions);
+      return Object.fromEntries(Object.entries(obj).map(([k,v]) =>
+        [k, (typeof v==='string' && ['challenge','id'].includes(k)) ? _b64urlDecode(v) : _coerceOptions(v)]
+      ));
+    }
+    function _credentialToJson(cred) {
+      const r = cred.response, obj = { id:cred.id, rawId:_b64urlEncode(cred.rawId), type:cred.type, response:{} };
+      if (r.attestationObject !== undefined) {
+        obj.response = { clientDataJSON:_b64urlEncode(r.clientDataJSON), attestationObject:_b64urlEncode(r.attestationObject) };
+      } else {
+        obj.response = { clientDataJSON:_b64urlEncode(r.clientDataJSON), authenticatorData:_b64urlEncode(r.authenticatorData), signature:_b64urlEncode(r.signature) };
+        if (r.userHandle) obj.response.userHandle = _b64urlEncode(r.userHandle);
+      }
+      return obj;
+    }
+
     function shell() {
       var _cachedPublicStream = localStorage.getItem('radioPublicStreamUrl') || '';
       return {
@@ -592,6 +701,10 @@
         pushSubscribed: false,
         pushBusy: false,
         pushError: '',
+        passkeyAvailable: false,
+        passBusy: false,
+        passError: '',
+        passkeys: [],
 
         async init() {
           // Guard: Alpine calls init() twice (auto-detect + x-init attribute).
@@ -628,7 +741,13 @@
                 .then(d => { this.claimableNames = d.names || []; })
                 .catch(() => {});
             }
+            if (v === 'profile') this.$dispatch('load-profile');
           });
+
+          if (window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
+            PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+              .then(v => { this.passkeyAvailable = v; }).catch(() => {});
+          }
 
           const ph = window.pushHelpers;
           if (ph && ph.isSupported()) {
@@ -671,7 +790,7 @@
             return;
           }
           const h = hash.replace(/^#\/?/, '');
-          const valid = ['submit', 'playing', 'library', 'admin'];
+          const valid = ['submit', 'playing', 'library', 'admin', 'profile'];
           this.view = valid.includes(h) ? h : 'playing';
         },
 
@@ -754,9 +873,13 @@
               return;
             }
             this.user = { ...this.user, name: data.name };
-            this._applyHash(location.hash);
-            this.refresh();
-            setInterval(() => this.refresh(), 15000);
+            if (this.passkeyAvailable) {
+              this.view = 'passkey-setup';
+            } else {
+              this._applyHash(location.hash);
+              this.refresh();
+              setInterval(() => this.refresh(), 15000);
+            }
           } catch (e) {
             this.setupError = 'Network error. Please try again.';
           } finally {
@@ -1006,6 +1129,112 @@
           if (diff < 3600) return Math.round(diff / 60) + 'm ago';
           if (diff < 86400) return Math.round(diff / 3600) + 'h ago';
           return Math.round(diff / 86400) + 'd ago';
+        },
+
+        _routeToApp() {
+          this._applyHash(location.hash);
+          this.refresh();
+          setInterval(() => this.refresh(), 15000);
+        },
+
+        skipPasskeySetup() {
+          this._routeToApp();
+        },
+
+        async registerPasskey() {
+          this.passError = '';
+          this.passBusy = true;
+          try {
+            const beginRes = await fetch('/api/auth/passkey/register/begin', { method: 'POST' });
+            if (!beginRes.ok) { this.passError = 'Could not start registration.'; return; }
+            const { options } = await beginRes.json();
+            let cred;
+            try {
+              cred = await navigator.credentials.create({ publicKey: _coerceOptions(options) });
+            } catch (e) {
+              if (e.name === 'NotAllowedError') { this.passError = 'Registration cancelled.'; return; }
+              this.passError = 'Registration failed: ' + e.message;
+              return;
+            }
+            const completeRes = await fetch('/api/auth/passkey/register/complete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ credential: _credentialToJson(cred) }),
+            });
+            if (!completeRes.ok) {
+              const d = await completeRes.json();
+              this.passError = d.detail || 'Registration failed.';
+              return;
+            }
+            if (this.view === 'passkey-setup') {
+              this._routeToApp();
+            } else {
+              await this.loadPasskeys();
+            }
+          } catch (e) {
+            this.passError = 'Network error. Please try again.';
+          } finally {
+            this.passBusy = false;
+          }
+        },
+
+        async loginWithPasskey() {
+          this.loginError = '';
+          this.loginBusy = true;
+          try {
+            const beginRes = await fetch('/api/auth/passkey/authenticate/begin', { method: 'POST' });
+            if (!beginRes.ok) { this.loginError = 'Could not start sign-in.'; return; }
+            const { options } = await beginRes.json();
+            let cred;
+            try {
+              cred = await navigator.credentials.get({ publicKey: _coerceOptions(options) });
+            } catch (e) {
+              if (e.name === 'NotAllowedError') { this.loginError = 'Sign-in cancelled.'; return; }
+              this.loginError = 'Sign-in failed: ' + e.message;
+              return;
+            }
+            const completeRes = await fetch('/api/auth/passkey/authenticate/complete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ credential: _credentialToJson(cred) }),
+            });
+            const data = await completeRes.json();
+            if (!completeRes.ok) {
+              this.loginError = data.detail || 'Sign-in failed.';
+              return;
+            }
+            this.user = data.user;
+            this._routeToApp();
+          } catch (e) {
+            this.loginError = 'Network error. Please try again.';
+          } finally {
+            this.loginBusy = false;
+          }
+        },
+
+        async loadPasskeys() {
+          try {
+            const res = await fetch('/api/auth/passkey/list');
+            if (res.ok) {
+              const data = await res.json();
+              this.passkeys = data.passkeys;
+            }
+          } catch { /* ignore */ }
+        },
+
+        async deletePasskey(credId) {
+          if (!confirm('Remove this passkey? You will need to use email sign-in on this device.')) return;
+          try {
+            const res = await fetch('/api/auth/passkey/' + encodeURIComponent(credId), { method: 'DELETE' });
+            if (res.ok) {
+              this.passkeys = this.passkeys.filter(p => p.id !== credId);
+            } else {
+              const d = await res.json();
+              alert(d.detail || 'Failed to remove passkey.');
+            }
+          } catch (e) {
+            alert('Network error. Please try again.');
+          }
         },
       };
     }
