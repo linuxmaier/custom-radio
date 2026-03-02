@@ -85,6 +85,23 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     expires_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS passkey_credentials (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    public_key BLOB NOT NULL,
+    sign_count INTEGER NOT NULL DEFAULT 0,
+    aaguid TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_used_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS passkey_challenges (
+    challenge TEXT PRIMARY KEY,
+    user_id TEXT,
+    type TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
 """
 
 CONFIG_DEFAULTS = {

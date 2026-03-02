@@ -1,4 +1,5 @@
 import hashlib
+import json as _json
 import logging
 import os
 import secrets
@@ -10,6 +11,20 @@ from email_utils import send_email
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from webauthn import (
+    generate_authentication_options,
+    generate_registration_options,
+    options_to_json,
+    verify_authentication_response,
+    verify_registration_response,
+)
+from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
+from webauthn.helpers.structs import (
+    AuthenticatorSelectionCriteria,
+    PublicKeyCredentialDescriptor,
+    ResidentKeyRequirement,
+    UserVerificationRequirement,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth")
@@ -17,10 +32,12 @@ router = APIRouter(prefix="/auth")
 MAGIC_LINK_TTL_MINUTES = 15
 CLAIM_CODE_TTL_MINUTES = 5
 SESSION_TTL_DAYS = 30
+CHALLENGE_TTL_MINUTES = 5
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 _hostname = os.environ.get("SERVER_HOSTNAME", "localhost")
 IS_LOCAL = _hostname in ("localhost", "")
 STATION_NAME = os.environ.get("STATION_NAME", "Family Radio")
+_origin = f"{'http' if IS_LOCAL else 'https'}://{_hostname}"
 
 _VERIFY_HTML = """\
 <!DOCTYPE html>
@@ -193,6 +210,40 @@ def _send_magic_link_email(to: str, raw_token: str) -> None:
     )
 
 
+def _store_challenge(conn, challenge_bytes: bytes, user_id: str | None, ctype: str) -> str:
+    b64 = bytes_to_base64url(challenge_bytes)
+    conn.execute(
+        "DELETE FROM passkey_challenges WHERE expires_at < ?",
+        (datetime.now(UTC).isoformat(),),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO passkey_challenges (challenge, user_id, type, expires_at) VALUES (?, ?, ?, ?)",
+        (b64, user_id, ctype, _expires_iso(minutes=CHALLENGE_TTL_MINUTES)),
+    )
+    return b64
+
+
+def _consume_challenge(conn, b64: str, ctype: str) -> dict | None:
+    """Fetch-and-delete a challenge row. Returns None if missing or expired."""
+    row = conn.execute(
+        "SELECT * FROM passkey_challenges WHERE challenge = ? AND type = ?",
+        (b64, ctype),
+    ).fetchone()
+    if not row:
+        return None
+    conn.execute("DELETE FROM passkey_challenges WHERE challenge = ?", (b64,))
+    return None if _is_expired(row["expires_at"]) else dict(row)
+
+
+def _challenge_from_credential(credential_dict: dict) -> str:
+    """Decode clientDataJSON to extract the echoed challenge (base64url string)."""
+    import base64 as _base64
+
+    raw = credential_dict.get("response", {}).get("clientDataJSON", "")
+    client_data = _json.loads(_base64.urlsafe_b64decode(raw + "=="))
+    return client_data.get("challenge", "")
+
+
 # ── Auth dependencies ─────────────────────────────────────────────────────────
 
 
@@ -256,6 +307,10 @@ class BootstrapBody(BaseModel):
 class CreateUserBody(BaseModel):
     email: str
     name: str | None = None
+
+
+class PasskeyCredentialBody(BaseModel):
+    credential: dict
 
 
 # ── Public endpoints ──────────────────────────────────────────────────────────
@@ -498,6 +553,172 @@ def update_me(body: UpdateNameBody, user: dict = Depends(require_user)) -> dict:
             (user["id"], name),
         )
     return {"ok": True, "name": name}
+
+
+# ── Passkey endpoints ─────────────────────────────────────────────────────────
+
+
+@router.post("/passkey/register/begin")
+def passkey_register_begin(user: dict = Depends(require_user)) -> dict:
+    with db() as conn:
+        existing = conn.execute("SELECT id FROM passkey_credentials WHERE user_id = ?", (user["id"],)).fetchall()
+        exclude = [PublicKeyCredentialDescriptor(id=base64url_to_bytes(r["id"])) for r in existing]
+        opts = generate_registration_options(
+            rp_id=_hostname,
+            rp_name=STATION_NAME,
+            user_id=user["id"].encode(),
+            user_name=user["email"],
+            user_display_name=user["name"] or user["email"],
+            authenticator_selection=AuthenticatorSelectionCriteria(
+                resident_key=ResidentKeyRequirement.PREFERRED,
+                user_verification=UserVerificationRequirement.PREFERRED,
+            ),
+            exclude_credentials=exclude,
+        )
+        _store_challenge(conn, opts.challenge, user["id"], "registration")
+    return {"options": _json.loads(options_to_json(opts))}
+
+
+@router.post("/passkey/register/complete")
+def passkey_register_complete(body: PasskeyCredentialBody, user: dict = Depends(require_user)) -> dict:
+    challenge_b64 = _challenge_from_credential(body.credential)
+    with db() as conn:
+        row = _consume_challenge(conn, challenge_b64, "registration")
+        if not row:
+            raise HTTPException(400, "Challenge invalid or expired")
+        if row["user_id"] != user["id"]:
+            raise HTTPException(403, "Challenge user mismatch")
+        try:
+            verified = verify_registration_response(
+                credential=body.credential,
+                expected_challenge=base64url_to_bytes(challenge_b64),
+                expected_rp_id=_hostname,
+                expected_origin=_origin,
+            )
+        except Exception as exc:
+            raise HTTPException(400, f"Registration verification failed: {exc}") from exc
+
+        cred_id_b64 = bytes_to_base64url(verified.credential_id)
+        existing = conn.execute("SELECT id FROM passkey_credentials WHERE id = ?", (cred_id_b64,)).fetchone()
+        if existing:
+            raise HTTPException(409, "Credential already registered")
+
+        aaguid = str(verified.aaguid) if verified.aaguid else ""
+        conn.execute(
+            "INSERT INTO passkey_credentials (id, user_id, public_key, sign_count, aaguid) VALUES (?, ?, ?, ?, ?)",
+            (cred_id_b64, user["id"], verified.credential_public_key, verified.sign_count, aaguid),
+        )
+    return {"ok": True}
+
+
+@router.post("/passkey/authenticate/begin")
+def passkey_authenticate_begin() -> dict:
+    with db() as conn:
+        opts = generate_authentication_options(
+            rp_id=_hostname,
+            user_verification=UserVerificationRequirement.PREFERRED,
+        )
+        _store_challenge(conn, opts.challenge, None, "authentication")
+    return {"options": _json.loads(options_to_json(opts))}
+
+
+@router.post("/passkey/authenticate/complete")
+def passkey_authenticate_complete(body: PasskeyCredentialBody, response: Response) -> dict:
+    cred_id_raw = body.credential.get("id", "")
+    challenge_b64 = _challenge_from_credential(body.credential)
+    with db() as conn:
+        ch_row = _consume_challenge(conn, challenge_b64, "authentication")
+        if not ch_row:
+            raise HTTPException(400, "Challenge invalid or expired")
+
+        cred_row = conn.execute(
+            "SELECT pc.id, pc.public_key, pc.sign_count, pc.aaguid,"
+            " u.id as uid, u.email, u.name, u.status"
+            " FROM passkey_credentials pc JOIN users u ON pc.user_id = u.id"
+            " WHERE pc.id = ?",
+            (cred_id_raw,),
+        ).fetchone()
+        if not cred_row:
+            raise HTTPException(400, "Credential not found")
+        if cred_row["status"] != "approved":
+            raise HTTPException(403, "Account not approved")
+
+        try:
+            verified = verify_authentication_response(
+                credential=body.credential,
+                expected_challenge=base64url_to_bytes(challenge_b64),
+                expected_rp_id=_hostname,
+                expected_origin=_origin,
+                credential_public_key=bytes(cred_row["public_key"]),
+                credential_current_sign_count=cred_row["sign_count"],
+                require_user_verification=False,
+            )
+        except Exception as exc:
+            raise HTTPException(400, f"Authentication verification failed: {exc}") from exc
+
+        conn.execute(
+            "UPDATE passkey_credentials SET sign_count = ?, last_used_at = ? WHERE id = ?",
+            (verified.new_sign_count, datetime.now(UTC).isoformat(), cred_id_raw),
+        )
+
+        raw_session = secrets.token_urlsafe(32)
+        session_hash = _hash(raw_session)
+        conn.execute(
+            "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+            (session_hash, cred_row["uid"], _expires_iso(days=SESSION_TTL_DAYS)),
+        )
+
+    response.set_cookie(
+        key="session",
+        value=raw_session,
+        httponly=True,
+        secure=not IS_LOCAL,
+        samesite="lax",
+        max_age=SESSION_TTL_DAYS * 86400,
+        path="/",
+    )
+    return {
+        "ok": True,
+        "user": {
+            "id": cred_row["uid"],
+            "email": cred_row["email"],
+            "name": cred_row["name"],
+        },
+    }
+
+
+@router.get("/passkey/list")
+def passkey_list(user: dict = Depends(require_user)) -> dict:
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id, aaguid, created_at, last_used_at"
+            " FROM passkey_credentials WHERE user_id = ? ORDER BY created_at",
+            (user["id"],),
+        ).fetchall()
+    return {
+        "passkeys": [
+            {
+                "id": r["id"],
+                "aaguid": r["aaguid"],
+                "created_at": r["created_at"],
+                "last_used_at": r["last_used_at"],
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.delete("/passkey/{credential_id}")
+def passkey_delete(credential_id: str, user: dict = Depends(require_user)) -> dict:
+    with db() as conn:
+        row = conn.execute(
+            "SELECT id FROM passkey_credentials WHERE id = ? AND user_id = ?",
+            (credential_id, user["id"]),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Credential not found")
+        conn.execute("DELETE FROM passkey_credentials WHERE id = ?", (credential_id,))
+    return {"ok": True}
 
 
 # ── Admin-only endpoints ──────────────────────────────────────────────────────
