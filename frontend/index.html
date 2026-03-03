@@ -662,6 +662,11 @@
       }
       return obj;
     }
+    function _extractYouTubeUrl(text) {
+      if (!text) return null;
+      const m = text.match(/https?:\/\/(?:(?:www\.|m\.|music\.)?youtube\.com\/(?:watch\?[^\s]*v=|shorts\/|embed\/)|youtu\.be\/)[^\s&"')>]*/);
+      return m ? m[0] : null;
+    }
 
     function shell() {
       var _cachedPublicStream = localStorage.getItem('radioPublicStreamUrl') || '';
@@ -706,11 +711,21 @@
         passBusy: false,
         passError: '',
         passkeys: [],
+        shareUrl: '',
 
         async init() {
           // Guard: Alpine calls init() twice (auto-detect + x-init attribute).
           if (this._initRunning) return;
           this._initRunning = true;
+
+          // Parse Web Share Target query params (Android share sheet)
+          const _sp = new URLSearchParams(location.search);
+          const _shareUrl = _extractYouTubeUrl(_sp.get('url') || '')
+                         || _extractYouTubeUrl(_sp.get('text') || '');
+          if (_shareUrl) {
+            this.shareUrl = _shareUrl;
+            history.replaceState(null, '', '/');  // clean query string immediately
+          }
 
           console.log('[radio] init — streamUrl:', this.streamUrl, 'publicStreamUrl:', this.publicStreamUrl);
 
@@ -772,7 +787,12 @@
             if (res.ok) {
               this.user = await res.json();
               this.authChecked = true;
-              this._applyHash(location.hash);
+              if (this.shareUrl) {
+                this.view = 'submit';
+                history.replaceState(null, '', '/#submit');
+              } else {
+                this._applyHash(location.hash);
+              }
               this.refresh();
               setInterval(() => this.refresh(), 15000);
             } else {
@@ -1134,7 +1154,12 @@
         },
 
         _routeToApp() {
-          this._applyHash(location.hash);
+          if (this.shareUrl) {
+            this.view = 'submit';
+            history.replaceState(null, '', '/#submit');
+          } else {
+            this._applyHash(location.hash);
+          }
           this.refresh();
           setInterval(() => this.refresh(), 15000);
         },
@@ -1264,6 +1289,17 @@
 
         initSubmit() {
           // No submitter fetch needed — name comes from the logged-in user
+          // Watch for the view transitioning TO 'submit'. We can't act on shareUrl
+          // immediately here because initSubmit() runs while init() is awaiting the
+          // auth fetch — clearing shareUrl now would prevent the auth-success branch
+          // from seeing it and navigating to this view.
+          this.$watch('view', (v) => {
+            if (v !== 'submit' || !this.shareUrl) return;
+            this.tab = 'youtube';
+            this.youtubeUrl = this.shareUrl;
+            this.shareUrl = '';
+            this.$nextTick(() => this.scheduleDupCheck());
+          });
         },
 
         fileSelected(event) {

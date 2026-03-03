@@ -104,7 +104,7 @@ The frontend is a single-page app — navigation between views does not reload t
 | View | URL | Purpose |
 |------|-----|---------|
 | Now Playing | `/` or `/#playing` | See what's on, recent history, and manage push notifications |
-| Submit | `/#submit` | Add a song (file upload or YouTube link) |
+| Submit | `/#submit` | Add a song (file upload or YouTube link); on Android, the app appears in the OS share sheet so YouTube URLs can be shared directly into this view |
 | Library | `/#library` | All songs grouped by submitter with play counts |
 | Admin | `/#admin` | Change mode, skip track, manage library |
 
@@ -166,7 +166,7 @@ All public endpoints are proxied through nginx at `/api/`.
 | `GET` | `/api/library` | All tracks with status (admin use) |
 | `GET` | `/api/track/{id}` | Single track (for polling submission status) |
 | `GET` | `/api/check-duplicate` | Fuzzy duplicate check by `title`, `artist`, and/or `video_id` |
-| `GET` | `/api/manifest.json` | PWA Web App Manifest (station name from `STATION_NAME` env var) |
+| `GET` | `/api/manifest.json` | PWA Web App Manifest (station name from `STATION_NAME` env var); includes `share_target` so the PWA appears in the Android OS share sheet |
 | `GET` | `/api/push/vapid-key` | VAPID public key for push subscription |
 | `POST` | `/api/push/subscribe` | Register a push subscription (session-required in App Auth mode) |
 | `POST` | `/api/push/unsubscribe` | Remove a push subscription (session-required in App Auth mode) |

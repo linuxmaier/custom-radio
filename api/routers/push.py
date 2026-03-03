@@ -47,6 +47,15 @@ def get_manifest():
                 "purpose": "monochrome",
             },
         ],
+        "share_target": {
+            "action": "/",
+            "method": "GET",
+            "params": {
+                "title": "title",
+                "text": "text",
+                "url": "url",
+            },
+        },
     }
     return JSONResponse(
         content=manifest,
