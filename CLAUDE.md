@@ -107,12 +107,19 @@ The frontend is a single-page app (`frontend/index.html`) using Alpine.js v3 wit
 - `user` — `{id, email, name}` or `null`; `authChecked` — `false` until `GET /api/auth/me` resolves (prevents flash of unauthed content)
 - `loginState` — `'email'` | `'pending'` | `'code'`; `loginEmail`, `loginMsg`, `loginError`, `loginBusy`, `claimCode`
 - `setupName`, `setupError`, `setupBusy` — for display-name-setup view shown on first login; `claimableNames: []` — populated by `GET /api/auth/claimable-names` when setup view appears; allows existing submitters to reclaim their track history by picking their name
+- `shareUrl` — YouTube URL captured from Android Web Share Target query params (`?url=` or `?text=`); set synchronously in `init()` before the auth fetch, cleared by `initSubmit()` after pre-filling the form
 
 **Auth flow in `init()`:**
 - `init()` is `async`; `_initRunning` guard at the top prevents double-execution (Alpine calls `init()` twice: once for the `init` method on the data object, once for `x-init="init()"` on `<body>`)
+- Immediately after the guard, query params are parsed for Web Share Target: `_extractYouTubeUrl()` checks `?url=` then `?text=`, stores any match in `this.shareUrl`, and calls `history.replaceState` to clean the URL — all synchronously, before the auth fetch
 - First action: `GET /api/auth/me` — 200 → set `user`, proceed normally; 401 → set `view = 'login'`
+- After auth succeeds, if `shareUrl` is set: `view = 'submit'` (overrides `_applyHash`). Same logic in `_routeToApp()` (called after passkey/magic-link sign-in).
 - `_applyHash()` forces `view = 'login'` if `!this.user`
 - `refresh()` (status poller) handles 401 by clearing `user` and setting `view = 'login'`
+
+**Web Share Target (`initSubmit()`):**
+- The manifest (`/api/manifest.json`) includes `share_target` with `action: "/"`, `method: "GET"`, params `title`/`text`/`url`. Android adds the PWA to the OS share sheet; sharing a YouTube URL opens `/?url=...` or `/?text=...`.
+- `initSubmit()` uses `$watch('view', ...)` to pre-fill the form when `view` transitions to `'submit'`. Do NOT change this to `$watch('shareUrl', ...)` or an immediate apply — Alpine initialises child `x-data` components (including `submitView`) while `init()` is suspended at `await fetch('/api/auth/me')`, so `initSubmit()` runs before the auth check completes. Clearing `shareUrl` immediately would prevent the auth-success branch from seeing it and navigating to the submit view.
 
 **Views added by auth:**
 - `login` — three states: email entry → `POST /api/auth/request-access` (approved users get magic link; others see pending message); code entry → `POST /api/auth/claim` → cookie set, `needs_name` check. Passkey users can sign in without email via the passkey flow (no code needed).
