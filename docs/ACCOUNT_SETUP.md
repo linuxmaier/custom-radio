@@ -73,7 +73,7 @@ After your first sign-in you'll be prompted to set up a passkey. You can do it r
 
 ### Future sign-ins (with passkey)
 
-1. Open the app (mobile) or go to the radio site (desktop) and tap **Sign in**
+1. Open the app (mobile) or go to the radio site (desktop) — the sign-in page will show a **Sign in with passkey** option alongside the email field
 2. Tap **Sign in with passkey** — your device will prompt for Face ID / Touch ID / PIN
 3. You're in immediately — no email needed
 
