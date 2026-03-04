@@ -21,6 +21,7 @@ self.addEventListener('push', (e) => {
     badge: '/static/badge-96.png',
     tag: 'new-track',
     renotify: true,
+    vibrate: [200, 100, 200],
     data: { url: data.url || '/#playing' },
   };
 

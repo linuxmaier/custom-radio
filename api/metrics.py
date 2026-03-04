@@ -38,7 +38,7 @@ def _push_cloudwatch(count: int) -> None:
         import boto3  # type: ignore[import-untyped]
 
         hostname = os.environ.get("SERVER_HOSTNAME", "unknown")
-        region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        region = os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
         client = boto3.client("cloudwatch", region_name=region)
         client.put_metric_data(
             Namespace="FamilyRadio",
