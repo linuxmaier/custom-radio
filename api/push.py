@@ -57,6 +57,8 @@ def send_push_to_all(title: str, body: str, url: str = "/playing.html") -> None:
                         data=payload,
                         vapid_private_key=cfg["private_key"],
                         vapid_claims={"sub": f"mailto:{cfg['claims_email']}"},
+                        ttl=86400,
+                        headers={"Urgency": "high"},
                     )
                 except WebPushException as e:
                     status = e.response.status_code if e.response is not None else None
