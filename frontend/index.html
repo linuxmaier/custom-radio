@@ -299,6 +299,9 @@
         <div x-show="casting" x-cloak style="margin-top:0.5rem; font-size:0.8rem; color: var(--muted);">
           Cast audio may be a few seconds behind the live stream.
         </div>
+        <div x-show="listenerCount > 0" x-cloak style="margin-top:0.5rem; font-size:0.8rem; color: var(--muted);"
+             x-text="listenerCount === 1 ? '1 listener tuned in' : listenerCount + ' listeners tuned in'">
+        </div>
       </div>
 
       <div x-show="!nowPlaying && loaded" class="now-playing" x-cloak>
@@ -690,6 +693,7 @@
         nowPlaying: null,
         recent: [],
         pendingCount: 0,
+        listenerCount: null,
         loaded: false,
         playing: false,
         loading: false,
@@ -1101,6 +1105,7 @@
             this.nowPlaying = data.now_playing;
             this.recent = data.recent;
             this.pendingCount = data.pending_count;
+            this.listenerCount = data.listener_count ?? null;
             this.loaded = true;
             if (data.public_stream_url) {
               const tokenUrl = location.protocol + '//' + location.hostname + data.public_stream_url;
