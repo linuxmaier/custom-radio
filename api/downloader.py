@@ -53,7 +53,9 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
                 "YouTube bot-check failed: upload fresh cookies.txt in the admin panel (Tools → YouTube Cookies)."
             )
         if "needs to be reloaded" in stderr and attempt < max_attempts:
-            logger.warning(f"yt-dlp transient error (attempt {attempt}/{max_attempts}), retrying in 3s: {stderr.strip()}")
+            logger.warning(
+                f"yt-dlp transient error (attempt {attempt}/{max_attempts}), retrying in 3s: {stderr.strip()}"
+            )
             time.sleep(3)
             continue
         raise RuntimeError(f"yt-dlp failed: {stderr}")
