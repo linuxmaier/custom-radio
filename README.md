@@ -131,7 +131,7 @@ Upload MP3, WAV, FLAC, M4A, OGG, or OPUS files up to 200MB.
 ### YouTube
 Paste any YouTube video URL. Title and artist are extracted from the video metadata.
 
-> **Note**: YouTube blocks yt-dlp requests from cloud/datacenter IP ranges (AWS, GCP, etc.). The `bgutil-provider` sidecar handles this by generating Proof of Origin tokens locally, so YouTube downloads should work out of the box. If submissions still fail with a bot-check error, upload a fresh `cookies.txt` (Netscape format, from a signed-in throwaway Google account) via the admin panel → **YouTube Cookies** as a secondary measure.
+> **Note**: YouTube blocks yt-dlp requests from cloud/datacenter IP ranges (AWS, GCP, etc.). The primary fix is uploading a `cookies.txt` (Netscape format) exported from a **signed-in** throwaway Google account via the admin panel → **YouTube Cookies**. Valid logged-in cookies cause YouTube to serve HLS streams that bypass its JS challenge entirely. The `bgutil-provider` sidecar also runs to generate Proof of Origin tokens as an additional layer. Cookies must be exported while actually signed in (the file should contain `SID`, `SSID`, `LOGIN_INFO` tokens) — unauthenticated exports still fail. Use the "Get cookies.txt LOCALLY" browser extension and export after browsing YouTube while signed in.
 
 ## API Reference
 
