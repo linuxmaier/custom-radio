@@ -32,13 +32,12 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
         "--remote-components",
         "ejs:github",
         "--extractor-args",
-        "youtube:player_client=android_vr",
-        "--extractor-args",
         "youtubepot-bgutilhttp:base_url=http://bgutil-provider:4416",
     ]
 
-    # Cookies intentionally not passed: android_vr player client does not support them,
-    # and bgutil po_token handles bot detection for this client.
+    if os.path.exists(COOKIES_PATH):
+        cmd += ["--cookies", COOKIES_PATH]
+        logger.info("Using YouTube cookies")
 
     cmd.append(url)
 
