@@ -1,6 +1,7 @@
 import logging
 import os
 import subprocess
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +42,20 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
     cmd.append(url)
 
     logger.info(f"Downloading YouTube: {url}")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # noqa: S603
-
-    if result.returncode != 0:
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # noqa: S603
+        if result.returncode == 0:
+            break
         stderr = result.stderr
         if "Sign in to confirm" in stderr or "bot" in stderr.lower():
             raise RuntimeError(
                 "YouTube bot-check failed: upload fresh cookies.txt in the admin panel (Tools → YouTube Cookies)."
             )
+        if "needs to be reloaded" in stderr and attempt < max_attempts:
+            logger.warning(f"yt-dlp transient error (attempt {attempt}/{max_attempts}), retrying in 3s: {stderr.strip()}")
+            time.sleep(3)
+            continue
         raise RuntimeError(f"yt-dlp failed: {stderr}")
 
     output_path = os.path.join(MEDIA_DIR, "raw", f"{track_id}.mp3")
