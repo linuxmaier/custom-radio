@@ -82,9 +82,7 @@ def request_skip(auth=Depends(require_admin)):
 def youtube_cookies_status(auth=Depends(require_admin)):
     """Check whether a YouTube cookies file is present."""
     exists = os.path.exists(COOKIES_PATH)
-    updated_at = None
-    if exists:
-        updated_at = datetime.fromtimestamp(os.path.getmtime(COOKIES_PATH), UTC).isoformat()
+    updated_at = get_config("youtube_cookies_uploaded_at") if exists else None
     return {"present": exists, "updated_at": updated_at}
 
 
@@ -95,6 +93,7 @@ async def upload_youtube_cookies(file: UploadFile = File(...), auth=Depends(requ
     content = await file.read()
     with open(COOKIES_PATH, "wb") as f:
         f.write(content)
+    set_config("youtube_cookies_uploaded_at", datetime.now(UTC).isoformat())
     logger.info("YouTube cookies updated")
     return {"ok": True}
 
