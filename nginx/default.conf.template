@@ -31,24 +31,21 @@ server {
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy no-referrer always;
 
-    auth_basic "${STATION_NAME}";
-    auth_basic_user_file /etc/nginx/.htpasswd;
     limit_req zone=auth_limit burst=50 nodelay;
 
     root /usr/share/nginx/html;
     index index.html;
 
     location = /ping {
-        auth_basic off;
         return 200 "ok";
         add_header Content-Type text/plain;
     }
 
-    # PWA assets must be publicly fetchable (no auth) so browsers can
-    # install the app, load the manifest, and register the service worker.
-    location = /sw.js { auth_basic off; try_files $uri =404; }
-    location = /api/manifest.json { auth_basic off; proxy_pass http://api:8000/manifest.json; }
-    location ~* ^/static/(icon-|apple-touch-icon|badge-|favicon).*\.png$ { auth_basic off; try_files $uri =404; }
+    # PWA assets must be publicly fetchable so browsers can install the app,
+    # load the manifest, and register the service worker.
+    location = /sw.js { try_files $uri =404; }
+    location = /api/manifest.json { proxy_pass http://api:8000/manifest.json; }
+    location ~* ^/static/(icon-|apple-touch-icon|badge-|favicon).*\.png$ { try_files $uri =404; }
 
     # Block internal API routes from external access
     location /api/internal/ {
@@ -80,7 +77,6 @@ server {
     # Set PUBLIC_STREAM_TOKEN in .env; leave unset to disable (path resolves to /stream- which
     # is unknown and harmless). Treat the URL like a password — share person-to-person only.
     location /stream-${PUBLIC_STREAM_TOKEN} {
-        auth_basic off;
         proxy_pass http://icecast:8000/radio;
         proxy_buffering off;
         proxy_read_timeout 3600s;
@@ -101,11 +97,8 @@ server {
         try_files $uri =404;
     }
 
-    # Catch-all: silently drop any path not matched by an explicit location block
-    # above. auth_basic off prevents scanner probes from receiving 401 challenges
-    # that would trip monitoring alarms.
+    # Catch-all: silently drop any path not matched by an explicit location block above.
     location / {
-        auth_basic off;
         return 444;
     }
 }

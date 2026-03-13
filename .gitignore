@@ -1,6 +1,5 @@
 # Secrets
 .env
-nginx/.htpasswd
 cookies/
 
 # Local dev override (gitignored so it is never restored to the server by git pull)

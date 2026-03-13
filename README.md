@@ -9,23 +9,15 @@ Five Docker services:
 - **Icecast** — stream server; reachable only within the Docker network (port 8000 is not exposed externally)
 - **Liquidsoap** — programs the stream; asks the API for the next track and handles ICY metadata
 - **Python/FastAPI** — manages submissions, downloads, audio analysis, library, and scheduling
-- **Nginx** — reverse proxy for the web UI and audio stream; handles HTTPS and (optionally) HTTP Basic Auth; proxies the stream at `/stream`
+- **Nginx** — reverse proxy for the web UI and audio stream; handles HTTPS; proxies the stream at `/stream`
 - **bgutil-provider** — local Node.js server that generates YouTube Proof of Origin (`po_token`) tokens; used by yt-dlp to pass YouTube's bot check from cloud IPs
 
 ## Quick Start
-
-### Authentication Modes
-
-The station supports two auth modes — choose one before setting up:
-
-- **Basic Auth mode** (default): The entire site is protected by a single shared HTTP Basic Auth username/password (one password for everyone). Simple but shows an ugly browser prompt and has no per-user identity.
-- **App Auth mode**: Application-level auth with per-user accounts, magic link email sign-in, passkey (WebAuthn/Touch ID/Face ID) sign-in, and a session cookie. Requires SMTP to be configured for sending sign-in emails. Provides per-user identity (submitter name pre-populated, own-track deletion). Recommended for new deployments.
 
 ### Prerequisites
 
 - Docker and Docker Compose
 - A domain name pointed at your VPS
-- `apache2-utils` (for `htpasswd`) — Basic Auth mode only
 
 ### Setup
 
@@ -34,26 +26,17 @@ The station supports two auth modes — choose one before setting up:
 cp .env.example .env
 $EDITOR .env
 
-# 2a. Basic Auth mode: generate the site password file
-htpasswd -cb nginx/.htpasswd family YOUR_PASSPHRASE
-# (The default docker-compose.yml uses nginx/default.conf.template which requires this file)
-
-# 2b. App Auth mode: swap in the noauth nginx template
-#     Edit the nginx volumes in docker-compose.yml, changing:
-#       nginx/default.conf.template → nginx/noauth.conf.template
-#     No .htpasswd file is needed. See "Bootstrap first user" below.
-
-# 3. Get a TLS certificate before starting (chicken-and-egg: nginx needs the cert to start)
+# 2. Get a TLS certificate before starting (chicken-and-egg: nginx needs the cert to start)
 docker run --rm -p 80:80 \
   -v $(basename $(pwd))_certbot_conf:/etc/letsencrypt \
   certbot/certbot certonly --standalone \
   -d your.domain.com \
   --email you@example.com --agree-tos --no-eff-email
 
-# 4. Build and start
+# 3. Build and start
 docker compose up -d --build
 
-# 5. App Auth mode only: bootstrap the first admin user
+# 4. Bootstrap the first admin user
 curl -X POST https://your.domain.com/api/auth/bootstrap \
   -H "Content-Type: application/json" \
   -d '{"email": "you@example.com"}'
@@ -65,7 +48,6 @@ curl -X POST https://your.domain.com/api/auth/bootstrap \
 - Icecast status (internal only): `docker exec radio-nginx-1 curl http://icecast:8000/status-json.xsl`
 - Submit a YouTube link via the web UI
 - Poll `GET /api/track/{id}` until `status: "ready"` (usually under 5 minutes)
-- Basic Auth mode: Open VLC → Media → Open Network Stream → `https://family:passphrase@domain/stream`
 
 ## Local Development
 
@@ -78,17 +60,10 @@ cp .env.example .env && $EDITOR .env
 # 2. Set up the local override
 cp docker-compose.override.yml.example docker-compose.override.yml
 
-# 3a. Basic Auth mode (default override): generate .htpasswd
-htpasswd -cb nginx/.htpasswd family YOUR_PASSPHRASE
-
-# 3b. App Auth mode: edit docker-compose.override.yml and change the nginx template volume:
-#     nginx/local.conf.template → nginx/local-noauth.conf.template
-#     No .htpasswd needed.
-
-# 4. Start (no TLS needed — nginx uses the HTTP-only local config)
+# 3. Start (no TLS needed — nginx uses the HTTP-only local config)
 docker compose up --build
 
-# 5. App Auth mode only: bootstrap the first user
+# 4. Bootstrap the first user
 curl -X POST http://localhost/api/auth/bootstrap \
   -H "Content-Type: application/json" \
   -d '{"email": "you@example.com"}'
@@ -108,7 +83,7 @@ The frontend is a single-page app — navigation between views does not reload t
 | Library | `/#library` | All songs grouped by submitter with play counts |
 | Admin | `/#admin` | Change mode, skip track, manage library |
 
-In Basic Auth mode, all views are behind HTTP Basic Auth (shared family username/password from `.env`). In App Auth mode, users register by email and sign in via a magic link + claim code flow — no shared password is needed. The Admin view additionally requires an admin token sent via the `X-Admin-Token` header.
+Users register by email and sign in via a magic link + claim code flow, or with a passkey (Touch ID / Face ID). The Admin view additionally requires an admin token sent via the `X-Admin-Token` header.
 
 ### Player bar
 
@@ -139,12 +114,12 @@ All public endpoints are proxied through nginx at `/api/`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/auth/request-access` | Request access or send magic link (App Auth mode) |
+| `POST` | `/api/auth/request-access` | Request access or send magic link |
 | `GET` | `/api/auth/verify` | Validate magic link token; show "Get my sign-in code" button — does **not** consume the token (prefetcher-safe) |
 | `POST` | `/api/auth/verify` | Consume magic link token → show 6-digit claim code page |
-| `POST` | `/api/auth/claim` | Exchange claim code for session cookie (App Auth mode) |
-| `POST` | `/api/auth/logout` | Clear session cookie (App Auth mode) |
-| `POST` | `/api/auth/bootstrap` | Create first user (returns 403 once any user exists) (App Auth mode) |
+| `POST` | `/api/auth/claim` | Exchange claim code for session cookie |
+| `POST` | `/api/auth/logout` | Clear session cookie |
+| `POST` | `/api/auth/bootstrap` | Create first user (returns 403 once any user exists) |
 | `GET` | `/api/auth/me` | Current user info (session-required) |
 | `PATCH` | `/api/auth/me` | Update display name (session-required); backfills `tracks.user_id` for matching unclaimed tracks |
 | `GET` | `/api/auth/claimable-names` | Submitter names not yet claimed by any approved user (session-required) |
@@ -160,7 +135,7 @@ All public endpoints are proxied through nginx at `/api/`.
 | `GET` | `/api/auth/passkey/list` | List registered passkeys for current user (session-required) |
 | `DELETE` | `/api/auth/passkey/{credential_id}` | Remove a passkey (session-required) |
 | `POST` | `/api/submit` | Submit a track (multipart form); optional `comment` field (max 280 chars) shown on the Now Playing page and in push notifications |
-| `DELETE` | `/api/track/{id}` | Delete own track (session-required in App Auth mode) |
+| `DELETE` | `/api/track/{id}` | Delete own track (session-required) |
 | `GET` | `/api/status` | Now playing + recent 10 tracks + pending count + `station_name` + `public_stream_url` (if `PUBLIC_STREAM_TOKEN` is set) |
 | `GET` | `/api/public-library` | Ready tracks with play counts, grouped by submitter |
 | `GET` | `/api/library` | All tracks with status (admin use) |
@@ -168,8 +143,8 @@ All public endpoints are proxied through nginx at `/api/`.
 | `GET` | `/api/check-duplicate` | Fuzzy duplicate check by `title`, `artist`, and/or `video_id` |
 | `GET` | `/api/manifest.json` | PWA Web App Manifest (station name from `STATION_NAME` env var); includes `share_target` so the PWA appears in the Android OS share sheet |
 | `GET` | `/api/push/vapid-key` | VAPID public key for push subscription |
-| `POST` | `/api/push/subscribe` | Register a push subscription (session-required in App Auth mode) |
-| `POST` | `/api/push/unsubscribe` | Remove a push subscription (session-required in App Auth mode) |
+| `POST` | `/api/push/subscribe` | Register a push subscription (session-required) |
+| `POST` | `/api/push/unsubscribe` | Remove a push subscription (session-required) |
 | `GET` | `/api/admin/config` | Get current config (admin token required) |
 | `POST` | `/api/admin/config` | Update programming mode / block size |
 | `POST` | `/api/admin/skip` | Skip the current track |
@@ -192,8 +167,6 @@ See `.env.example` for the full list:
 | `ICECAST_ADMIN_PASSWORD` | Icecast web admin password |
 | `ICECAST_RELAY_PASSWORD` | Icecast relay password |
 | `ADMIN_TOKEN` | Token for admin API endpoints (sent via `X-Admin-Token` header) |
-| `SITE_USER` | HTTP Basic Auth username (default: `family`) — Basic Auth mode only |
-| `SITE_PASSPHRASE` | HTTP Basic Auth password — Basic Auth mode only |
 | `BACKUP_DEST` | Backup destination (e.g. `s3://your-bucket`); leave unset to disable backups |
 | `BACKUP_ENDPOINT_URL` | S3-compatible endpoint URL (optional; for non-AWS providers) |
 | `SMTP_HOST` | SMTP server hostname for alert emails (e.g. `email-smtp.us-east-1.amazonaws.com`); leave unset to disable alerts |
@@ -205,7 +178,7 @@ See `.env.example` for the full list:
 | `VAPID_PRIVATE_KEY` | VAPID private key (base64url) for Web Push notifications; leave unset to disable push |
 | `VAPID_PUBLIC_KEY` | VAPID public key (base64url) served to browsers for push subscription |
 | `VAPID_CLAIMS_EMAIL` | Contact email included in VAPID JWT claims (e.g. `admin@yourfamily.com`) |
-| `PUBLIC_STREAM_TOKEN` | Token for the unauthenticated public stream URL (`/stream-WORD1-WORD2-WORD3`); used by smart speakers, Chromecast, and other devices that can't send HTTP Basic Auth. Leave unset to disable. |
+| `PUBLIC_STREAM_TOKEN` | Token for the unauthenticated public stream URL (`/stream-WORD1-WORD2-WORD3`); used by smart speakers, Chromecast, and other devices that can't authenticate. Leave unset to disable. |
 
 ## Backups
 
@@ -248,7 +221,7 @@ tail /var/log/radio-backup.log
 
 - **Database**: a safe point-in-time snapshot taken via Python's `sqlite3.Connection.backup()` (WAL-safe). Stored as timestamped files plus a `radio-latest.db` alias for quick restore.
 - **Media**: an incremental sync of processed MP3s. Files are never deleted from the backup destination, so accidentally removed tracks remain recoverable.
-- **Config**: `.env` and `nginx/.htpasswd` are uploaded on each run (`config/env-latest.env` and `config/htpasswd-latest`) so secrets can be recovered without rebuilding from scratch.
+- **Config**: `.env` is uploaded on each run (`config/env-latest.env`) so it can be recovered without rebuilding from scratch.
 
 ### Restore DB
 
@@ -349,10 +322,8 @@ family-radio/
 ├── docker-compose.yml
 ├── .env.example
 ├── nginx/
-│   ├── default.conf.template        # production (HTTPS + Basic Auth)
-│   ├── local.conf.template          # local dev (HTTP + Basic Auth)
-│   ├── noauth.conf.template         # production (HTTPS + App Auth, no Basic Auth)
-│   └── local-noauth.conf.template   # local dev (HTTP + App Auth, no Basic Auth)
+│   ├── default.conf.template        # production (HTTPS)
+│   └── local.conf.template          # local dev (HTTP only)
 ├── icecast/
 │   └── icecast.xml
 ├── liquidsoap/
@@ -412,5 +383,5 @@ The tradeoff: without a burst, playback on connect depends entirely on live audi
 - **Background worker**: a single daemon thread polls the `jobs` table every 5 seconds. No Celery needed at family scale.
 - **Track identity**: each MP3 has its UUID written into the ID3 `comment` tag by ffmpeg during processing. Liquidsoap reads this tag back via TagLib to call `/internal/track-started/{id}`. Title and artist are **not** read from file tags at runtime — `/internal/next-track` returns a Liquidsoap annotate URI (`annotate:title="...",artist="...":file_path`) so the DB is the source of truth for display metadata. MP3 files also have `title` and `artist` tags written as a recovery aid if the DB is ever lost.
 - **TLS renewal**: the certbot container runs `certbot renew` every 12 hours. After a successful renewal it sends SIGHUP to nginx via a `--deploy-hook` (requires docker-cli in the certbot image and the Docker socket mounted read-only). The deploy hook finds the nginx container by a `family-radio.service=nginx` Docker label rather than a hardcoded container name, so it works regardless of the directory the project is cloned into.
-- **Bringing your own TLS cert or terminating TLS upstream**: if you use Cloudflare Tunnel, Tailscale Funnel, a wildcard cert, or another CA, you don't need the certbot service. Disable it (or replace its entrypoint with `sleep infinity`) and swap `nginx/default.conf.template` for `nginx/local.conf.template` in the nginx volumes, updating the template to match your cert paths or removing the TLS block entirely if TLS is handled upstream.
+- **Bringing your own TLS cert or terminating TLS upstream**: if you use Cloudflare Tunnel, Tailscale Funnel, a wildcard cert, or another CA, you don't need the certbot service. Disable it (or replace its entrypoint with `sleep infinity`) and update `nginx/default.conf.template` to match your cert paths or remove the TLS block entirely if TLS is handled upstream.
 - **yt-dlp** requires Deno as of late 2025 (installed in the API Dockerfile) and the `bgutil-ytdlp-pot-provider` plugin (installed via pip) to pass YouTube's Proof of Origin bot check from cloud IPs. The plugin calls the `bgutil-provider` sidecar container at `http://bgutil-provider:4416` to obtain a `po_token` for each download.

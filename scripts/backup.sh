@@ -78,9 +78,4 @@ aws s3 cp "${ENDPOINT_ARGS[@]}" "${REPO_ROOT}/.env" "${BUCKET}/config/env-${TIME
 aws s3 cp "${ENDPOINT_ARGS[@]}" "${REPO_ROOT}/.env" "${BUCKET}/config/env-latest.env" --quiet
 log ".env uploaded to ${BUCKET}/config/"
 
-if [ -f "${REPO_ROOT}/nginx/.htpasswd" ]; then
-    aws s3 cp "${ENDPOINT_ARGS[@]}" "${REPO_ROOT}/nginx/.htpasswd" "${BUCKET}/config/htpasswd-latest" --quiet
-    log ".htpasswd uploaded to ${BUCKET}/config/"
-fi
-
 log "Backup complete"

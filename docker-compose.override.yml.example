@@ -20,7 +20,6 @@ services:
   nginx:
     volumes:
       - ./nginx/local.conf.template:/etc/nginx/templates/default.conf.template:ro
-      - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
       - ./frontend:/usr/share/nginx/html:ro
     environment:
       - SERVER_HOSTNAME=localhost

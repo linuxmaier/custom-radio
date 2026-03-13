@@ -20,11 +20,8 @@ frontend/     Static HTML/JS/CSS (served by nginx)
 liquidsoap/   Liquidsoap script + Dockerfile
 icecast/      icecast.xml config
 nginx/        nginx template configs:
-                default.conf.template     = production HTTPS + Basic Auth
-                local.conf.template       = local HTTP-only + Basic Auth
-                noauth.conf.template      = production HTTPS, no Basic Auth (App Auth mode)
-                local-noauth.conf.template = local HTTP-only, no Basic Auth (App Auth mode)
-              .htpasswd (gitignored — Basic Auth mode only)
+                default.conf.template     = production HTTPS
+                local.conf.template       = local HTTP-only
 certbot/      Dockerfile extending certbot/certbot with docker-cli + reload-nginx.sh script
               (reload-nginx.sh finds the nginx container by its family-radio.service=nginx Docker
               label and sends nginx -s reload; called by the certbot --deploy-hook after renewal)
@@ -47,7 +44,7 @@ All public routes go through nginx at `/api/`. Internal routes are Docker-networ
 
 User endpoints (all routes except `/auth/request-access`, `/auth/verify`, `/auth/claim`, `/auth/bootstrap`, and `/push/vapid-key`) require a valid session cookie via `require_user` (FastAPI `Depends`). The dependency reads the `session` cookie, hashes it, joins `sessions` + `users`, checks expiry, slides the session TTL, and returns `{id, email, name, status}`. 401 is raised for missing/invalid/expired sessions.
 
-Admin endpoints are authenticated via the `X-Admin-Token` request header (value = `ADMIN_TOKEN` env var, no "Bearer" prefix). A custom header is used instead of `Authorization` because in Basic Auth mode nginx's `auth_basic` consumes the `Authorization` header, which would prevent Bearer tokens from reaching the API. In App Auth mode there is no `auth_basic`, but the X-Admin-Token pattern is kept for consistency.
+Admin endpoints are authenticated via the `X-Admin-Token` request header (value = `ADMIN_TOKEN` env var, no "Bearer" prefix).
 
 `IS_LOCAL = os.environ.get("SERVER_HOSTNAME", "localhost") in ("localhost", "")` — when True, auth endpoints include `debug_url` and `debug_token` in responses instead of sending email (no SMTP needed for local dev).
 
@@ -162,9 +159,7 @@ The admin view also has a **YouTube Cookies** card that shows whether a cookies 
 - **bgutil-provider must be pulled on every production deploy** — it uses an upstream image that is never rebuilt locally. Always include `docker compose pull bgutil-provider` before `docker compose up`. Running an outdated bgutil image (pre-1.3.0) causes po_token generation to fail silently with "Sign in to confirm you're not a bot".
 - **YouTube cookie quality — multiple stations**: Each station uses a separate throwaway Google account and a separate cookie file. **Use separate browser profiles** (e.g. Chrome profile A for station A, profile B for station B) when generating cookies — do not sign both accounts into the same browser simultaneously. Shared browser fingerprinting cookies in a multi-account session can shorten cookie lifespan and trigger YouTube's bot detection faster. To export cookies, use the "Get cookies.txt LOCALLY" Chrome/Firefox extension (Netscape format) from within the correct profile, then upload via the admin panel.
 - **`docker-compose.override.yml` is gitignored**: local dev only (disables certbot, uses HTTP-only nginx, exposes Icecast port 8000). Copy `docker-compose.override.yml.example` to use it locally. It is not present on the production server and will not be restored by `git pull`.
-- **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}`, `${STATION_NAME}` (for `auth_basic`), and `${PUBLIC_STREAM_TOKEN}` (for the public stream URL route). The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. All three vars must be set in docker-compose.yml for nginx (`PUBLIC_STREAM_TOKEN` defaults to empty string via `${PUBLIC_STREAM_TOKEN:-}`, which disables the public stream route). The `noauth` templates (`noauth.conf.template`, `local-noauth.conf.template`) do not use `${STATION_NAME}` (no `auth_basic` directive), but still need `${SERVER_HOSTNAME}` and `${PUBLIC_STREAM_TOKEN}`.
-- **Two nginx auth modes**: Basic Auth mode uses `default.conf.template` (production) or `local.conf.template` (local) — site-wide HTTP Basic Auth prompt. App Auth mode uses `noauth.conf.template` (production) or `local-noauth.conf.template` (local) — no Basic Auth prompt; all auth is handled by the API session cookie. To switch modes, change the volume mount in `docker-compose.yml` (and override file for local) to point to the desired template. App Auth mode requires the database to have at least one approved user (see bootstrap step).
-- **nginx `auth_basic off` for PWA assets is intentional**: `/sw.js`, `/api/manifest.json`, and icon PNGs are deliberately exempted from HTTP Basic Auth in both `default.conf.template` and `local.conf.template`. Browsers and mobile OSes fetch these at the system level (not through a user session) when installing a PWA or displaying notifications — they do not carry stored Basic Auth credentials. Do not remove these exemptions. The exposed content is non-sensitive (a service worker, a manifest with the station name, and static images). The `noauth` templates have no `auth_basic` at all, so no exemptions are needed there.
+- **nginx env vars**: `nginx/default.conf.template` uses `${SERVER_HOSTNAME}` and `${PUBLIC_STREAM_TOKEN}`. The official `nginx:alpine` image processes `/etc/nginx/templates/*.template` files with `envsubst` at startup. `PUBLIC_STREAM_TOKEN` defaults to empty string via `${PUBLIC_STREAM_TOKEN:-}`, which disables the public stream route.
 
 - **Magic link prefetcher protection**: `GET /auth/verify` validates the token and returns a "Get my sign-in code" button page — it does NOT consume the token. `POST /auth/verify` (the button's form target) consumes the token and returns the claim code page. This split prevents iMessage, Gmail, and other email/messaging clients from silently burning single-use tokens via link prefetch GETs before the user taps the link.
 
@@ -174,7 +169,6 @@ The admin view also has a **YouTube Cookies** card that shows whether a cookies 
 ## Secrets and Gitignored Files
 
 - `.env` — never commit; `.env.example` is the template
-- `nginx/.htpasswd` — generated locally with `htpasswd -cb nginx/.htpasswd family PASSPHRASE`; only needed in Basic Auth mode (not App Auth / noauth template mode)
 - `cookies/` — YouTube session cookies (Google account credentials); upload via admin panel, never commit
 
 ## GitHub CLI Tips
@@ -201,7 +195,7 @@ PR descriptions must include:
 ## Development Tips
 
 - **Local full-stack**: `docker compose up --build` — `docker-compose.override.yml` is automatically applied and handles local differences (HTTP-only nginx, certbot disabled, `SERVER_HOSTNAME=localhost`)
-- **nginx config templates**: four templates exist — `nginx/default.conf.template` (production, HTTPS + Basic Auth), `nginx/local.conf.template` (local, HTTP + Basic Auth), `nginx/noauth.conf.template` (production, HTTPS + App Auth), `nginx/local-noauth.conf.template` (local, HTTP + App Auth). The override file maps the local template into the nginx container. To use App Auth mode locally, edit the override file to mount `local-noauth.conf.template` instead of `local.conf.template`.
+- **nginx config templates**: two templates — `nginx/default.conf.template` (production, HTTPS) and `nginx/local.conf.template` (local, HTTP only). The override file maps `local.conf.template` into the nginx container.
 - To test the API locally without Docker: `cd api && uvicorn main:app --reload`
   Set env vars: `ADMIN_TOKEN=dev DB_PATH=./radio.db MEDIA_DIR=./media`
 - **After any Python file change, always use `--build`**: `docker compose up -d --build api && docker compose restart nginx`. Without `--build`, Docker restarts the container using the old image — the code change is silently ignored and the old behaviour persists. nginx must also be restarted because it caches the api container's IP at startup (otherwise it serves 502s).
