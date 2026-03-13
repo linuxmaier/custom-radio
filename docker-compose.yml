@@ -81,14 +81,12 @@ services:
       - "443:443"
     environment:
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
-      - STATION_NAME=${STATION_NAME}
       - PUBLIC_STREAM_TOKEN=${PUBLIC_STREAM_TOKEN:-}
     labels:
       - "family-radio.service=nginx"
     volumes:
       # .template files are processed by envsubst at container startup
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
-      - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
       - ./frontend:/usr/share/nginx/html:ro
       - certbot_www:/var/www/certbot:ro
       - certbot_conf:/etc/letsencrypt:ro
