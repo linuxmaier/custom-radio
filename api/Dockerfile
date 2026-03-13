@@ -1,15 +1,14 @@
+FROM denoland/deno:bin-2.7.5 AS deno
+
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
-    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Deno (required by yt-dlp as of late 2025)
-RUN curl -fsSL https://deno.land/install.sh | sh
-ENV DENO_INSTALL=/root/.deno
-ENV PATH="${DENO_INSTALL}/bin:${PATH}"
+# Install Deno (required by yt-dlp as of late 2025) — copied from pinned official image
+COPY --from=deno /deno /usr/local/bin/deno
 
 WORKDIR /app
 
