@@ -33,6 +33,8 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
         "ejs:github",
         "--extractor-args",
         "youtubepot-bgutilhttp:base_url=http://bgutil-provider:4416",
+        "--extractor-args",
+        "youtube:player_client=web_safari",
     ]
 
     if os.path.exists(COOKIES_PATH):
