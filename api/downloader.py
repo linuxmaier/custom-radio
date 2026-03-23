@@ -1,6 +1,8 @@
 import logging
 import os
+import shutil
 import subprocess
+import tempfile
 import time
 
 logger = logging.getLogger(__name__)
@@ -37,30 +39,41 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
         "youtube:player_client=web_safari",
     ]
 
+    # Copy cookies to a temp file so yt-dlp cannot overwrite the uploaded original.
+    # yt-dlp rewrites the --cookies file on close, stripping auth cookies it didn't
+    # receive back from the server; subsequent runs then fail silently with LOGIN_REQUIRED.
+    tmp_cookies = None
     if os.path.exists(COOKIES_PATH):
-        cmd += ["--cookies", COOKIES_PATH]
-        logger.info("Using YouTube cookies")
+        tmp_fd, tmp_cookies = tempfile.mkstemp(suffix=".txt", prefix="yt_cookies_")
+        os.close(tmp_fd)
+        shutil.copy2(COOKIES_PATH, tmp_cookies)
+        cmd += ["--cookies", tmp_cookies]
+        logger.info("Using YouTube cookies (via temp copy)")
 
     cmd.append(url)
 
     logger.info(f"Downloading YouTube: {url}")
     max_attempts = 3
-    for attempt in range(1, max_attempts + 1):
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # noqa: S603
-        if result.returncode == 0:
-            break
-        stderr = result.stderr
-        if "Sign in to confirm" in stderr or "bot" in stderr.lower():
-            raise RuntimeError(
-                "YouTube bot-check failed: upload fresh cookies.txt in the admin panel (Tools → YouTube Cookies)."
-            )
-        if "needs to be reloaded" in stderr and attempt < max_attempts:
-            logger.warning(
-                f"yt-dlp transient error (attempt {attempt}/{max_attempts}), retrying in 3s: {stderr.strip()}"
-            )
-            time.sleep(3)
-            continue
-        raise RuntimeError(f"yt-dlp failed: {stderr}")
+    try:
+        for attempt in range(1, max_attempts + 1):
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # noqa: S603
+            if result.returncode == 0:
+                break
+            stderr = result.stderr
+            if "Sign in to confirm" in stderr or "bot" in stderr.lower():
+                raise RuntimeError(
+                    "YouTube bot-check failed: upload fresh cookies.txt in the admin panel (Tools → YouTube Cookies)."
+                )
+            if "needs to be reloaded" in stderr and attempt < max_attempts:
+                logger.warning(
+                    f"yt-dlp transient error (attempt {attempt}/{max_attempts}), retrying in 3s: {stderr.strip()}"
+                )
+                time.sleep(3)
+                continue
+            raise RuntimeError(f"yt-dlp failed: {stderr}")
+    finally:
+        if tmp_cookies and os.path.exists(tmp_cookies):
+            os.unlink(tmp_cookies)
 
     output_path = os.path.join(MEDIA_DIR, "raw", f"{track_id}.mp3")
     info_path = os.path.join(MEDIA_DIR, "raw", f"{track_id}.info.json")
