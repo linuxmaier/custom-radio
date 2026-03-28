@@ -25,6 +25,8 @@ def require_admin(x_admin_token: str = Header(None)):
 class ConfigUpdate(BaseModel):
     programming_mode: str | None = None
     rotation_tracks_per_block: int | None = None
+    dj_enabled: bool | None = None
+    dj_submitters_per_interlude: int | None = None
 
 
 @router.get("/admin/config")
@@ -33,6 +35,8 @@ def get_admin_config(auth=Depends(require_admin)):
         "programming_mode": get_config("programming_mode"),
         "rotation_tracks_per_block": int(get_config("rotation_tracks_per_block")),
         "rotation_current_submitter_idx": int(get_config("rotation_current_submitter_idx")),
+        "dj_enabled": get_config("dj_enabled") == "true",
+        "dj_submitters_per_interlude": int(get_config("dj_submitters_per_interlude") or "2"),
     }
 
 
@@ -49,6 +53,16 @@ def update_admin_config(update: ConfigUpdate, auth=Depends(require_admin)):
             raise HTTPException(400, "rotation_tracks_per_block must be 1-20")
         set_config("rotation_tracks_per_block", str(update.rotation_tracks_per_block))
         logger.info(f"Tracks per block set to: {update.rotation_tracks_per_block}")
+
+    if update.dj_enabled is not None:
+        set_config("dj_enabled", "true" if update.dj_enabled else "false")
+        logger.info(f"DJ enabled set to: {update.dj_enabled}")
+
+    if update.dj_submitters_per_interlude is not None:
+        if not (1 <= update.dj_submitters_per_interlude <= 20):
+            raise HTTPException(400, "dj_submitters_per_interlude must be 1-20")
+        set_config("dj_submitters_per_interlude", str(update.dj_submitters_per_interlude))
+        logger.info(f"DJ submitters per interlude set to: {update.dj_submitters_per_interlude}")
 
     return {"ok": True}
 

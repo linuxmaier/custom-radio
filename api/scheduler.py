@@ -1,10 +1,12 @@
 import logging
 import math
+import os
 import random
 from datetime import UTC, datetime, timedelta
 
 from audio import AudioFeatures, euclidean_distance, normalize_features
 from database import db, get_config, set_config
+from dj import DJ_SENTINEL
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,7 @@ def _pick_global_fallback() -> dict | None:
 
         row = conn.execute(
             """
-            SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
+            SELECT t.id, t.title, t.artist, t.submitter, t.file_path FROM tracks t
             WHERE t.status='ready' AND t.id != ? AND t.id != ?
             ORDER BY COALESCE(
                 (SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id), ''
@@ -44,7 +46,7 @@ def _pick_global_fallback() -> dict | None:
 
         if not row:  # truly last resort — allow any ready track
             row = conn.execute("""
-                SELECT t.id, t.title, t.artist, t.file_path FROM tracks t
+                SELECT t.id, t.title, t.artist, t.submitter, t.file_path FROM tracks t
                 WHERE t.status='ready'
                 ORDER BY COALESCE(
                     (SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id), ''
@@ -60,6 +62,174 @@ def _pick_global_fallback() -> dict | None:
         "id": row["id"],
         "title": row["title"],
         "artist": row["artist"],
+        "submitter": row["submitter"],
+        "file_path": row["file_path"],
+    }
+
+
+def _advance_for_dj():
+    """Advance rotation state when the DJ-reserved track is consumed (after an interlude).
+
+    Mirrors the rotation-advance part of _advance() without touching the DJ cycle counter
+    (caller resets dj_submitters_since_last_interlude directly).
+    """
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter"
+        ).fetchall()
+        submitters = [r["submitter"] for r in rows]
+
+    if not submitters:
+        return
+
+    idx = int(get_config("rotation_current_submitter_idx")) % len(submitters)
+    next_idx = (idx + 1) % len(submitters)
+    set_config("rotation_current_submitter_idx", str(next_idx))
+
+    with db() as conn:
+        latest = conn.execute("SELECT COALESCE(MAX(id), 0) as n FROM play_log").fetchone()["n"]
+    set_config("rotation_block_start_log_id", str(latest))
+
+
+def is_penultimate_submitter_track(submitter: str, track_id: str) -> bool:
+    """Return True if generation should be triggered now to allow the interlude to land
+    cleanly between this submitter's block and the next.
+
+    Liquidsoap prefetches one track ahead: next-track fires when a track STARTS, not when
+    it ends. So for the interlude to be returned before Molly1, dj_pending_file must be set
+    before the next-track call that fires when Joe's last track starts. That means generation
+    must be triggered one track earlier — at Joe's penultimate track.
+
+    Returns True at the penultimate position, defined as:
+      - played_this_block >= max(1, tracks_per_block - 1)  — second-to-last in a full block
+      - OR remaining eligible tracks <= 1                   — abbreviated block: only one left
+        (remaining == 1 means this IS second-to-last; remaining == 0 is a 1-track fallback)
+    """
+    tracks_per_block = int(get_config("rotation_tracks_per_block"))
+    block_start_log_id = int(get_config("rotation_block_start_log_id") or "0")
+
+    with db() as conn:
+        played_this_block = conn.execute(
+            """
+            SELECT COUNT(*) FROM play_log pl
+            JOIN tracks t ON pl.track_id = t.id
+            WHERE t.submitter = ? AND pl.id > ?
+            """,
+            (submitter, block_start_log_id),
+        ).fetchone()[0]
+
+    if played_this_block >= max(1, tracks_per_block - 1):
+        return True
+
+    # Block isn't full yet — check remaining eligible tracks.
+    last_returned_id = get_config("last_returned_track_id") or ""
+    cooldown_active = _cooldown_is_active()
+
+    with db() as conn:
+        if cooldown_active:
+            cutoff = (datetime.now(UTC) - timedelta(seconds=COOLDOWN_WINDOW_S)).isoformat()
+            remaining = conn.execute(
+                """
+                SELECT COUNT(*) FROM tracks
+                WHERE submitter = ? AND status = 'ready'
+                  AND id != ?
+                  AND id != ?
+                  AND id NOT IN (SELECT track_id FROM play_log WHERE played_at > ?)
+                """,
+                (submitter, track_id, last_returned_id, cutoff),
+            ).fetchone()[0]
+        else:
+            remaining = conn.execute(
+                """
+                SELECT COUNT(*) FROM tracks
+                WHERE submitter = ? AND status = 'ready'
+                  AND id != ?
+                  AND id != ?
+                """,
+                (submitter, track_id, last_returned_id),
+            ).fetchone()[0]
+
+    # remaining == 1: this is second-to-last (one track left after this)
+    # remaining == 0: 1-track block fallback — interlude will land one track into the next block
+    return remaining <= 1
+
+
+def peek_next_submitter_track() -> dict | None:
+    """Read-only: return what the scheduler would pick as the first track of the next submitter block.
+
+    Used by the DJ trigger to pre-select the post-interlude track before generation starts.
+    Does not modify any config keys.
+    """
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter"
+        ).fetchall()
+        submitters = [r["submitter"] for r in rows]
+
+    if not submitters:
+        return None
+
+    idx = int(get_config("rotation_current_submitter_idx")) % len(submitters)
+    next_idx = (idx + 1) % len(submitters)
+    next_submitter = submitters[next_idx]
+
+    last_returned_id = get_config("last_returned_track_id") or ""
+    cooldown_active = _cooldown_is_active()
+
+    with db() as conn:
+        last_played = conn.execute(
+            "SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1"
+        ).fetchone()
+        last_played_id = last_played["track_id"] if last_played else ""
+
+        if cooldown_active:
+            cutoff = (datetime.now(UTC) - timedelta(seconds=COOLDOWN_WINDOW_S)).isoformat()
+            rows = conn.execute(
+                """
+                SELECT t.id, t.title, t.artist, t.submitter, t.file_path,
+                       COUNT(pl.id) as play_count
+                FROM tracks t
+                LEFT JOIN play_log pl ON pl.track_id = t.id
+                WHERE t.submitter=? AND t.status='ready'
+                  AND t.id != ?
+                  AND t.id != ?
+                  AND t.id NOT IN (SELECT track_id FROM play_log WHERE played_at > ?)
+                GROUP BY t.id
+                """,
+                (next_submitter, last_played_id, last_returned_id, cutoff),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT t.id, t.title, t.artist, t.submitter, t.file_path,
+                       COUNT(pl.id) as play_count
+                FROM tracks t
+                LEFT JOIN play_log pl ON pl.track_id = t.id
+                WHERE t.submitter=? AND t.status='ready'
+                  AND t.id != ?
+                  AND t.id != ?
+                GROUP BY t.id
+                """,
+                (next_submitter, last_played_id, last_returned_id),
+            ).fetchall()
+
+    if not rows:
+        return None
+
+    new_tracks = [r for r in rows if r["play_count"] == 0]
+    existing_tracks = [r for r in rows if r["play_count"] > 0]
+
+    if new_tracks:
+        row = random.choice(new_tracks)
+    else:
+        weights = [1.0 / math.sqrt(r["play_count"] + 1) for r in existing_tracks]
+        row = random.choices(existing_tracks, weights=weights, k=1)[0]
+
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "artist": row["artist"],
+        "submitter": row["submitter"],
         "file_path": row["file_path"],
     }
 
@@ -68,7 +238,27 @@ def get_next_track() -> dict | None:
     """
     Main scheduling entry point. Returns a dict with id/title/artist/file_path
     for the next track to play, or None if nothing is ready.
+
+    Before normal scheduling, checks for a pending DJ interlude (dj_pending_file).
+    When an interlude is returned, the rotation is immediately advanced to the next
+    submitter so normal scheduling picks up correctly after the interlude plays.
     """
+    if get_config("dj_enabled") == "true":
+        pending_file = get_config("dj_pending_file")
+        if pending_file and os.path.exists(pending_file):
+            set_config("dj_pending_file", "")
+            set_config("dj_submitters_since_last_interlude", "0")
+            set_config("last_returned_track_id", "")
+            _advance_for_dj()
+            logger.info("Returning DJ interlude: %s", pending_file)
+            return {
+                "id": DJ_SENTINEL,
+                "title": "Family Radio",
+                "artist": "The AI DJ",
+                "submitter": "",
+                "file_path": pending_file,
+            }
+
     mode = get_config("programming_mode")
     logger.info(f"Scheduling mode: {mode}")
 
@@ -121,6 +311,16 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
         with db() as conn:
             latest = conn.execute("SELECT COALESCE(MAX(id), 0) as n FROM play_log").fetchone()["n"]
         set_config("rotation_block_start_log_id", str(latest))
+
+        if get_config("dj_enabled") == "true":
+            since = int(get_config("dj_submitters_since_last_interlude") or "0") + 1
+            set_config("dj_submitters_since_last_interlude", str(since))
+            threshold = int(get_config("dj_submitters_per_interlude") or "2")
+            logger.info("DJ: submitters_since_last_interlude=%d (threshold=%d)", since, threshold)
+            if (since >= threshold - 1
+                    and not get_config("dj_pending_file")):
+                set_config("dj_generation_needed", "true")
+                logger.info("DJ: generation needed — entering last block before interlude")
 
     if played_this_block >= tracks_per_block:
         logger.info(f"Rotation: block complete for {current_submitter}, advancing")
@@ -191,6 +391,7 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
         "id": row["id"],
         "title": row["title"],
         "artist": row["artist"],
+        "submitter": current_submitter,
         "file_path": row["file_path"],
     }
 
@@ -251,7 +452,7 @@ def _pick_mood_track() -> dict | None:
     with db() as conn:
         rows = conn.execute(
             f"""
-            SELECT t.id, t.title, t.artist, t.file_path, t.tempo_bpm, t.rms_energy,
+            SELECT t.id, t.title, t.artist, t.submitter, t.file_path, t.tempo_bpm, t.rms_energy,
                    t.spectral_centroid, t.zero_crossing_rate
             FROM tracks t
             WHERE t.status='ready' AND t.tempo_bpm IS NOT NULL
@@ -271,6 +472,7 @@ def _pick_mood_track() -> dict | None:
     best_id = None
     best_title = None
     best_artist = None
+    best_submitter = None
     best_path = None
     best_dist = float("inf")
 
@@ -288,6 +490,7 @@ def _pick_mood_track() -> dict | None:
             best_id = row["id"]
             best_title = row["title"]
             best_artist = row["artist"]
+            best_submitter = row["submitter"]
             best_path = row["file_path"]
 
     if not best_id:
@@ -298,6 +501,7 @@ def _pick_mood_track() -> dict | None:
         "id": best_id,
         "title": best_title,
         "artist": best_artist,
+        "submitter": best_submitter,
         "file_path": best_path,
     }
 

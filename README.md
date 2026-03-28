@@ -179,6 +179,8 @@ See `.env.example` for the full list:
 | `VAPID_PUBLIC_KEY` | VAPID public key (base64url) served to browsers for push subscription |
 | `VAPID_CLAIMS_EMAIL` | Contact email included in VAPID JWT claims (e.g. `admin@yourfamily.com`) |
 | `PUBLIC_STREAM_TOKEN` | Token for the unauthenticated public stream URL (`/stream-WORD1-WORD2-WORD3`); used by smart speakers, Chromecast, and other devices that can't authenticate. Leave unset to disable. |
+| `AWS_DEFAULT_REGION` | AWS region for CloudWatch listener count metrics (e.g. `us-west-2`); leave unset to disable |
+| `GOOGLE_API_KEY` | Gemini API key for AI DJ interludes; leave unset to disable |
 
 ## Backups
 
@@ -315,6 +317,51 @@ VAPID_CLAIMS_EMAIL=admin@yourfamily.com
 - Clicking the notification opens the Now Playing page
 - Subscriptions that have expired are removed automatically on the next send
 
+## CloudWatch Metrics
+
+The API can publish the current Icecast listener count to CloudWatch as a custom metric. This is opt-in — nothing is sent unless `AWS_DEFAULT_REGION` is set in `.env`.
+
+### Prerequisites
+
+The EC2 instance must have an IAM role with `cloudwatch:PutMetricData` permission. If the instance uses IMDSv2 with a hop limit of 1 (the default), run once on the host:
+
+```bash
+aws ec2 modify-instance-metadata-options --instance-id i-xxx --http-put-response-hop-limit 2
+```
+
+### Configuration
+
+```bash
+AWS_DEFAULT_REGION=us-west-2
+```
+
+The API container inherits credentials from the instance's IAM role automatically — no access keys needed.
+
+## AI DJ
+
+The AI DJ feature inserts a short spoken interlude between every N submitter blocks. The DJ recaps the last few songs and who submitted them, reads a fake radio ad for a silly small business, gives a Central/Pacific time check, then introduces the next track. Audio is generated via Gemini and served to Liquidsoap as a regular MP3.
+
+### Prerequisites
+
+A Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey). Uses `gemini-2.5-flash-lite` for script generation and `gemini-2.5-flash-preview-tts` for speech synthesis.
+
+### Configuration
+
+Add to `.env`:
+
+```bash
+GOOGLE_API_KEY=your-gemini-api-key
+```
+
+Then enable the AI DJ toggle in the admin panel. The frequency (submitter blocks between interludes) is also configurable there. The feature is off by default.
+
+### How it works
+
+- When a submitter block completes, a counter increments. When it reaches the configured threshold, the scheduler flags that an interlude is needed.
+- On the next `track-started` event, the API pre-selects the track that will follow the interlude, then generates the script + audio in a background thread.
+- The interlude MP3 is stored in `/media/dj/` and returned to Liquidsoap like any other track. If generation fails, the interlude is silently skipped and music continues uninterrupted.
+- Cost is approximately $0.005 per interlude.
+
 ## Project Structure
 
 ```
@@ -342,6 +389,7 @@ family-radio/
 │   ├── audio.py
 │   ├── downloader.py
 │   ├── push.py             # Web Push: send_push_to_all(); no-op if VAPID unset
+│   ├── dj.py               # AI DJ: Gemini script generation + TTS; no-op if GOOGLE_API_KEY unset
 │   ├── email_utils.py      # Generic send_email() helper (used by auth for magic links)
 │   └── routers/
 │       ├── auth.py         # /auth/* — magic link, passkeys (WebAuthn), claim codes, session cookies, user management
