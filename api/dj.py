@@ -102,7 +102,7 @@ def _generate_script(
     opening_styles = [
         "Open by zeroing in on one specific or surprising detail from one of the songs"
         " — a lyric, an instrument, a mood.",
-        "Open with a wry, affectionate one-liner about one submitter's taste.",
+        "Open with a wry, affectionate one-liner about the vibe or mood of the set — rooted in the music, not directed at a submitter.",
         "Open with a question or playful observation addressed directly to the listener.",
         "Open with an unexpected comparison — something the songs have in common that wouldn't be obvious.",
         "Open in the middle of a thought about how the last song ended or felt, then pull back to recap the set.",
