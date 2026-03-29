@@ -171,6 +171,10 @@ def peek_next_submitter_track() -> dict | None:
 
     Used by the DJ trigger to pre-select the post-interlude track before generation starts.
     Does not modify any config keys.
+
+    Mirrors _pick_rotation_track's skip logic: if the immediately next submitter has no
+    eligible tracks (e.g. all on cooldown), advances further until a submitter with tracks
+    is found, rather than returning None and silently suppressing DJ generation.
     """
     with db() as conn:
         rows = conn.execute("SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter").fetchall()
@@ -180,9 +184,6 @@ def peek_next_submitter_track() -> dict | None:
         return None
 
     idx = int(get_config("rotation_current_submitter_idx")) % len(submitters)
-    next_idx = (idx + 1) % len(submitters)
-    next_submitter = submitters[next_idx]
-
     last_returned_id = get_config("last_returned_track_id") or ""
     cooldown_active = _cooldown_is_active()
 
@@ -190,56 +191,62 @@ def peek_next_submitter_track() -> dict | None:
         last_played = conn.execute("SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1").fetchone()
         last_played_id = last_played["track_id"] if last_played else ""
 
-        if cooldown_active:
-            cutoff = (datetime.now(UTC) - timedelta(seconds=COOLDOWN_WINDOW_S)).isoformat()
-            rows = conn.execute(
-                """
-                SELECT t.id, t.title, t.artist, t.submitter, t.file_path,
-                       COUNT(pl.id) as play_count
-                FROM tracks t
-                LEFT JOIN play_log pl ON pl.track_id = t.id
-                WHERE t.submitter=? AND t.status='ready'
-                  AND t.id != ?
-                  AND t.id != ?
-                  AND t.id NOT IN (SELECT track_id FROM play_log WHERE played_at > ?)
-                GROUP BY t.id
-                """,
-                (next_submitter, last_played_id, last_returned_id, cutoff),
-            ).fetchall()
+    for offset in range(1, len(submitters) + 1):
+        next_submitter = submitters[(idx + offset) % len(submitters)]
+
+        with db() as conn:
+            if cooldown_active:
+                cutoff = (datetime.now(UTC) - timedelta(seconds=COOLDOWN_WINDOW_S)).isoformat()
+                candidate_rows = conn.execute(
+                    """
+                    SELECT t.id, t.title, t.artist, t.submitter, t.file_path,
+                           COUNT(pl.id) as play_count
+                    FROM tracks t
+                    LEFT JOIN play_log pl ON pl.track_id = t.id
+                    WHERE t.submitter=? AND t.status='ready'
+                      AND t.id != ?
+                      AND t.id != ?
+                      AND t.id NOT IN (SELECT track_id FROM play_log WHERE played_at > ?)
+                    GROUP BY t.id
+                    """,
+                    (next_submitter, last_played_id, last_returned_id, cutoff),
+                ).fetchall()
+            else:
+                candidate_rows = conn.execute(
+                    """
+                    SELECT t.id, t.title, t.artist, t.submitter, t.file_path,
+                           COUNT(pl.id) as play_count
+                    FROM tracks t
+                    LEFT JOIN play_log pl ON pl.track_id = t.id
+                    WHERE t.submitter=? AND t.status='ready'
+                      AND t.id != ?
+                      AND t.id != ?
+                    GROUP BY t.id
+                    """,
+                    (next_submitter, last_played_id, last_returned_id),
+                ).fetchall()
+
+        if not candidate_rows:
+            continue
+
+        new_tracks = [r for r in candidate_rows if r["play_count"] == 0]
+        existing_tracks = [r for r in candidate_rows if r["play_count"] > 0]
+
+        if new_tracks:
+            row = random.choice(new_tracks)
         else:
-            rows = conn.execute(
-                """
-                SELECT t.id, t.title, t.artist, t.submitter, t.file_path,
-                       COUNT(pl.id) as play_count
-                FROM tracks t
-                LEFT JOIN play_log pl ON pl.track_id = t.id
-                WHERE t.submitter=? AND t.status='ready'
-                  AND t.id != ?
-                  AND t.id != ?
-                GROUP BY t.id
-                """,
-                (next_submitter, last_played_id, last_returned_id),
-            ).fetchall()
+            weights = [1.0 / math.sqrt(r["play_count"] + 1) for r in existing_tracks]
+            row = random.choices(existing_tracks, weights=weights, k=1)[0]
 
-    if not rows:
-        return None
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "artist": row["artist"],
+            "submitter": row["submitter"],
+            "file_path": row["file_path"],
+        }
 
-    new_tracks = [r for r in rows if r["play_count"] == 0]
-    existing_tracks = [r for r in rows if r["play_count"] > 0]
-
-    if new_tracks:
-        row = random.choice(new_tracks)
-    else:
-        weights = [1.0 / math.sqrt(r["play_count"] + 1) for r in existing_tracks]
-        row = random.choices(existing_tracks, weights=weights, k=1)[0]
-
-    return {
-        "id": row["id"],
-        "title": row["title"],
-        "artist": row["artist"],
-        "submitter": row["submitter"],
-        "file_path": row["file_path"],
-    }
+    return None
 
 
 def get_next_track() -> dict | None:
