@@ -612,15 +612,20 @@
             <button class="btn secondary" style="padding:0.25rem 0.6rem; font-size:0.8rem;"
                     @click="pronounsEditing=true; pronounsInput=user?.pronouns||''">Edit</button>
           </div>
-          <div x-show="pronounsEditing" style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-            <input type="text" x-model="pronounsInput" placeholder="e.g. she/her, they/them, he/him"
-                   style="flex:1; min-width:160px;"
-                   @keydown.enter="savePronouns()" @keydown.escape="pronounsEditing=false">
-            <button class="btn" @click="savePronouns()" :disabled="pronounsBusy">
-              <span x-show="pronounsBusy" class="spinner"></span>
-              <span x-text="pronounsBusy ? 'Saving…' : 'Save'"></span>
-            </button>
-            <button class="btn secondary" @click="pronounsEditing=false">Cancel</button>
+          <div x-show="pronounsEditing">
+            <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+              <input type="text" x-model="pronounsInput" placeholder="e.g. she/her"
+                     style="flex:1; min-width:160px;"
+                     @keydown.enter="savePronouns()" @keydown.escape="pronounsEditing=false">
+              <button class="btn" @click="savePronouns()" :disabled="pronounsBusy">
+                <span x-show="pronounsBusy" class="spinner"></span>
+                <span x-text="pronounsBusy ? 'Saving…' : 'Save'"></span>
+              </button>
+              <button class="btn secondary" @click="pronounsEditing=false">Cancel</button>
+            </div>
+            <p style="margin:0.25rem 0 0; font-size:0.8rem; color:var(--muted);">
+              Examples: she/her &middot; he/him &middot; they/them &middot; she/they
+            </p>
           </div>
           <p x-show="pronounsMsg" x-text="pronounsMsg" x-cloak
              style="margin:0.25rem 0 0; font-size:0.85rem; color:var(--muted);"></p>
