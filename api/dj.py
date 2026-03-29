@@ -30,23 +30,43 @@ def _dj_dir() -> str:
 
 
 def _round_time_label(dt: datetime) -> str:
-    """Return a natural round-number time label, e.g. '3 o\'clock PM' or 'half past 2 PM'."""
-    minute = dt.minute
-    hour = dt.hour % 12 or 12
-    next_hour = ((dt.hour + 1) % 12) or 12
-    ampm = "AM" if dt.hour < 12 else "PM"
-    next_ampm = "AM" if (dt.hour + 1) % 24 < 12 else "PM"
+    """Return a natural time label rounded to the nearest quarter hour.
 
-    if minute < 8:
-        return f"{hour} o'clock {ampm}"
-    elif minute < 23:
-        return f"quarter past {hour} {ampm}"
-    elif minute < 38:
-        return f"half past {hour} {ampm}"
-    elif minute < 53:
-        return f"quarter to {next_hour} {next_ampm}"
+    Prefixes with 'heading up on' when before the quarter mark,
+    'just past' when after it, or no prefix when exactly on it.
+    E.g. 3:41 → 'heading up on quarter to 4 PM'
+         3:51 → 'just past quarter to 4 PM'
+         3:45 → 'quarter to 4 PM'
+    """
+    minute = dt.minute
+    hour = dt.hour
+
+    # Round to nearest quarter (0, 15, 30, 45, or 60 = next hour's :00)
+    quarter = round(minute / 15) * 15
+
+    target_hour = hour + (1 if quarter == 60 else 0)
+    target_minute = 0 if quarter == 60 else quarter
+
+    ampm = "AM" if target_hour % 24 < 12 else "PM"
+    h = target_hour % 12 or 12
+    next_h = (target_hour + 1) % 12 or 12
+    next_ampm = "AM" if (target_hour + 1) % 24 < 12 else "PM"
+
+    if target_minute == 0:
+        label = f"{h} o'clock {ampm}"
+    elif target_minute == 15:
+        label = f"quarter past {h} {ampm}"
+    elif target_minute == 30:
+        label = f"half past {h} {ampm}"
+    else:  # 45
+        label = f"quarter to {next_h} {next_ampm}"
+
+    if quarter == 60 or minute < quarter:
+        return f"heading up on {label}"
+    elif minute == quarter:
+        return label
     else:
-        return f"{next_hour} o'clock {next_ampm}"
+        return f"just past {label}"
 
 
 def _generate_script(
@@ -114,7 +134,7 @@ def _generate_script(
         " actual ad for something one notch weirder and more absurdly specific. Neither the first"
         " nor the second idea should resemble anything used in the previous interludes."
         " Earnest, absurdly specific, confident about the value they provide.\n"
-        f'3. A time check: "It\'s heading up on {ct_label} Central, {pt_label} Pacific."\n'
+        f'3. A time check: "It\'s {ct_label} Central, {pt_label} Pacific."\n'
         "4. A brief warm intro for the next track.\n\n"
         f"Recent tracks played:\n{recent_lines}\n\n"
         f'Next track: "{next_track["title"]}" by {next_track["artist"]},'
