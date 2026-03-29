@@ -116,10 +116,11 @@ def _generate_script(recent_tracks: list[dict], next_track: dict, ct_label: str,
         model="gemini-2.5-flash-lite",
         contents=prompt,
     )
-    # Strip parenthetical stage directions the model sometimes inserts despite instructions,
-    # then collapse any double spaces or extra blank lines left by the removal.
-    text = re.sub(r"\([^)]*\)", "", response.text).strip()
-    text = re.sub(r"  +", " ", text)
+    # Strip parenthetical stage directions and markdown emphasis the model inserts despite
+    # instructions, then collapse any double spaces or extra blank lines left by the removal.
+    text = re.sub(r"\([^)]*\)", "", response.text)
+    text = re.sub(r"\*+", "", text)
+    text = re.sub(r"  +", " ", text).strip()
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
