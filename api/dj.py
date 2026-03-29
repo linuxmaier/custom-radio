@@ -49,7 +49,13 @@ def _round_time_label(dt: datetime) -> str:
         return f"{next_hour} o'clock {next_ampm}"
 
 
-def _generate_script(recent_tracks: list[dict], next_track: dict, ct_label: str, pt_label: str) -> str:
+def _generate_script(
+    recent_tracks: list[dict],
+    next_track: dict,
+    ct_label: str,
+    pt_label: str,
+    submitter_pronouns: dict[str, str] | None = None,
+) -> str:
     """Generate a DJ script using Gemini Flash Lite."""
     from google import genai  # type: ignore[import]
 
@@ -60,6 +66,18 @@ def _generate_script(recent_tracks: list[dict], next_track: dict, ct_label: str,
     client = genai.Client(api_key=api_key)
 
     recent_lines = "\n".join(f'- "{t["title"]}" by {t["artist"]}, submitted by {t["submitter"]}' for t in recent_tracks)
+
+    pronouns = submitter_pronouns or {}
+    if pronouns:
+        pronoun_lines = "\n".join(f"- {name}: {p}" for name, p in sorted(pronouns.items()))
+        pronoun_section = (
+            "Submitter pronouns — use these exactly when referring to them by name"
+            f" (do not assume gender for anyone not listed; default to they/them):\n{pronoun_lines}\n\n"
+        )
+    else:
+        pronoun_section = (
+            "Do not assume gender when referring to submitters by name; use they/them unless you know otherwise.\n\n"
+        )
 
     opening_styles = [
         "Open by zeroing in on one specific or surprising detail from one of the songs"
@@ -81,7 +99,8 @@ def _generate_script(recent_tracks: list[dict], next_track: dict, ct_label: str,
     prompt = (
         "You are a warm, witty FM radio DJ hosting a cozy family internet radio station"
         " where real people submit their favourite songs.\n\n"
-        "Write a short radio DJ interlude, about 90 words when spoken aloud. Structure it as:\n"
+        + pronoun_section
+        + "Write a short radio DJ interlude, about 90 words when spoken aloud. Structure it as:\n"
         f"1. A brief recap of the last 3 songs. {opening_style} Mention the submitters naturally"
         " in passing, like a DJ would name-drop a dedication, not like you're thanking them profusely."
         " Keep it snappy; don't linger on compliments. Avoid generic travel metaphors (journey, ride,"
@@ -199,7 +218,12 @@ def _synthesize_to_mp3(script: str, output_path: str):
             os.unlink(wav_path)
 
 
-def generate_interlude(recent_tracks: list[dict], next_track: dict, estimated_play_time: datetime) -> str:
+def generate_interlude(
+    recent_tracks: list[dict],
+    next_track: dict,
+    estimated_play_time: datetime,
+    submitter_pronouns: dict[str, str] | None = None,
+) -> str:
     """Generate a DJ interlude MP3. Returns the file path."""
     ct = estimated_play_time.astimezone(ZoneInfo("America/Chicago"))
     pt = estimated_play_time.astimezone(ZoneInfo("America/Los_Angeles"))
@@ -213,7 +237,7 @@ def generate_interlude(recent_tracks: list[dict], next_track: dict, estimated_pl
         pt_label,
     )
 
-    script = _generate_script(recent_tracks, next_track, ct_label, pt_label)
+    script = _generate_script(recent_tracks, next_track, ct_label, pt_label, submitter_pronouns)
     logger.info("DJ script: %.120s", script)
 
     # Rotate script history: prev ← last ← new
@@ -226,7 +250,12 @@ def generate_interlude(recent_tracks: list[dict], next_track: dict, estimated_pl
     return clip_path
 
 
-def trigger_generation(recent_tracks: list[dict], next_track: dict, estimated_play_time: datetime):
+def trigger_generation(
+    recent_tracks: list[dict],
+    next_track: dict,
+    estimated_play_time: datetime,
+    submitter_pronouns: dict[str, str] | None = None,
+):
     """Kick off DJ generation in a background daemon thread.
 
     On success, sets dj_pending_file in config.
@@ -237,7 +266,7 @@ def trigger_generation(recent_tracks: list[dict], next_track: dict, estimated_pl
     def _run():
         for attempt in range(1, 3):
             try:
-                path = generate_interlude(recent_tracks, next_track, estimated_play_time)
+                path = generate_interlude(recent_tracks, next_track, estimated_play_time, submitter_pronouns)
                 set_config("dj_pending_file", path)
                 return
             except Exception:

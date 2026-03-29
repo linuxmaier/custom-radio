@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     name TEXT,
+    pronouns TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -172,6 +173,10 @@ def init_db():
             pass  # column already exists
         try:
             conn.execute("ALTER TABLE tracks ADD COLUMN user_id TEXT REFERENCES users(id)")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN pronouns TEXT")
         except sqlite3.OperationalError:
             pass  # column already exists
         try:

@@ -120,6 +120,15 @@ def track_started(track_id: str):
             estimated_play_time = datetime.now(UTC) + timedelta(
                 seconds=float(duration_s or 180) + last_track_duration_s
             )
+            # Look up pronouns for all submitters involved in this interlude.
+            unique_submitters = {t["submitter"] for t in recent_tracks} | {peeked["submitter"]}
+            with db() as conn:
+                placeholders = ",".join("?" * len(unique_submitters))
+                pronoun_rows = conn.execute(
+                    f"SELECT name, pronouns FROM users WHERE name IN ({placeholders}) AND pronouns IS NOT NULL",  # noqa: S608
+                    list(unique_submitters),
+                ).fetchall()
+            submitter_pronouns = {r["name"]: r["pronouns"] for r in pronoun_rows}
             logger.info(
                 "DJ: triggering generation at penultimate track (submitter=%s); reserved next: %s ('%s' by %s)",
                 submitter,
@@ -127,6 +136,6 @@ def track_started(track_id: str):
                 peeked["title"],
                 peeked["artist"],
             )
-            trigger_generation(recent_tracks, peeked, estimated_play_time)
+            trigger_generation(recent_tracks, peeked, estimated_play_time, submitter_pronouns)
 
     return {"ok": True}

@@ -302,7 +302,7 @@ def require_user(session: str | None = Cookie(default=None)) -> dict:
     with db() as conn:
         row = conn.execute(
             """
-            SELECT s.token_hash, s.expires_at, u.id, u.email, u.name, u.status
+            SELECT s.token_hash, s.expires_at, u.id, u.email, u.name, u.pronouns, u.status
             FROM sessions s JOIN users u ON s.user_id = u.id
             WHERE s.token_hash = ?
             """,
@@ -321,6 +321,7 @@ def require_user(session: str | None = Cookie(default=None)) -> dict:
         "id": row["id"],
         "email": row["email"],
         "name": row["name"],
+        "pronouns": row["pronouns"],
         "status": row["status"],
     }
 
@@ -344,7 +345,8 @@ class ClaimBody(BaseModel):
 
 
 class UpdateNameBody(BaseModel):
-    name: str
+    name: str | None = None
+    pronouns: str | None = None
 
 
 class BootstrapBody(BaseModel):
@@ -594,7 +596,7 @@ def bootstrap(body: BootstrapBody) -> dict:
 
 @router.get("/me")
 def get_me(user: dict = Depends(require_user)) -> dict:
-    return {"id": user["id"], "email": user["email"], "name": user["name"]}
+    return {"id": user["id"], "email": user["email"], "name": user["name"], "pronouns": user["pronouns"]}
 
 
 @router.get("/claimable-names")
@@ -612,22 +614,32 @@ def claimable_names(user: dict = Depends(require_user)) -> dict:
 
 @router.patch("/me")
 def update_me(body: UpdateNameBody, user: dict = Depends(require_user)) -> dict:
-    name = body.name.strip()[:50]
-    if not name:
-        raise HTTPException(400, "Name cannot be empty")
+    if body.name is None and body.pronouns is None:
+        raise HTTPException(400, "Nothing to update")
+    updated_name = user["name"]
+    updated_pronouns = user["pronouns"]
     with db() as conn:
-        taken = conn.execute(
-            "SELECT id FROM users WHERE name = ? AND id != ? AND status = 'approved'",
-            (name, user["id"]),
-        ).fetchone()
-        if taken:
-            raise HTTPException(409, "That name is already taken by another member")
-        conn.execute("UPDATE users SET name = ? WHERE id = ?", (name, user["id"]))
-        conn.execute(
-            "UPDATE tracks SET user_id = ? WHERE submitter = ? AND user_id IS NULL",
-            (user["id"], name),
-        )
-    return {"ok": True, "name": name}
+        if body.name is not None:
+            name = body.name.strip()[:50]
+            if not name:
+                raise HTTPException(400, "Name cannot be empty")
+            taken = conn.execute(
+                "SELECT id FROM users WHERE name = ? AND id != ? AND status = 'approved'",
+                (name, user["id"]),
+            ).fetchone()
+            if taken:
+                raise HTTPException(409, "That name is already taken by another member")
+            conn.execute("UPDATE users SET name = ? WHERE id = ?", (name, user["id"]))
+            conn.execute(
+                "UPDATE tracks SET user_id = ? WHERE submitter = ? AND user_id IS NULL",
+                (user["id"], name),
+            )
+            updated_name = name
+        if body.pronouns is not None:
+            pronouns = body.pronouns.strip()[:50] or None
+            conn.execute("UPDATE users SET pronouns = ? WHERE id = ?", (pronouns, user["id"]))
+            updated_pronouns = pronouns
+    return {"ok": True, "name": updated_name, "pronouns": updated_pronouns}
 
 
 # ── Passkey endpoints ─────────────────────────────────────────────────────────
