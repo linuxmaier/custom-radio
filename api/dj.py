@@ -3,6 +3,7 @@
 import logging
 import os
 import random
+import re
 import subprocess
 import tempfile
 import threading
@@ -115,7 +116,11 @@ def _generate_script(recent_tracks: list[dict], next_track: dict, ct_label: str,
         model="gemini-2.5-flash-lite",
         contents=prompt,
     )
-    return response.text.strip()
+    # Strip parenthetical stage directions the model sometimes inserts despite instructions,
+    # then collapse any double spaces or extra blank lines left by the removal.
+    text = re.sub(r"\([^)]*\)", "", response.text).strip()
+    text = re.sub(r"  +", " ", text)
+    return re.sub(r"\n{3,}", "\n\n", text)
 
 
 def _synthesize_to_mp3(script: str, output_path: str):
