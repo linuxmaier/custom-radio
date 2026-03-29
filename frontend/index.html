@@ -480,6 +480,28 @@
         </div>
 
         <div class="card">
+          <h2>AI DJ</h2>
+          <p style="color:var(--muted); font-size:0.875rem; margin-bottom:1rem">
+            Inserts a short AI-generated DJ interlude between every N submitter blocks.
+            The DJ recaps recent tracks, reads a fake ad, gives a time check, and
+            introduces the next song. Requires <code>GOOGLE_API_KEY</code> in the server config.
+          </p>
+          <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1rem">
+            <label style="font-size:0.875rem; font-weight:600">AI DJ</label>
+            <button class="btn" :class="{ secondary: !config.dj_enabled }"
+                    @click="toggleDj()">
+              <span x-text="config.dj_enabled ? 'On' : 'Off'"></span>
+            </button>
+          </div>
+          <div class="form-group" x-show="config.dj_enabled">
+            <label>Submitter blocks between interludes</label>
+            <input type="text" style="width:80px"
+                   :value="config.dj_submitters_per_interlude"
+                   @change="setDjFrequency($event.target.value)" />
+          </div>
+        </div>
+
+        <div class="card">
           <h2>Playback Controls</h2>
           <p style="color:var(--muted); font-size:0.875rem; margin-bottom:1rem">
             Skip signals the player to move to the next song. Takes effect within a few seconds.
@@ -1637,6 +1659,27 @@
           if (res.ok) {
             this.config.rotation_tracks_per_block = n;
             this.flash('success', 'Block size set to ' + n);
+          }
+        },
+
+        async toggleDj() {
+          const next = !this.config.dj_enabled;
+          const res = await this.apiPost('/api/admin/config', { dj_enabled: next });
+          if (res.ok) {
+            this.config.dj_enabled = next;
+            this.flash('success', 'AI DJ ' + (next ? 'enabled' : 'disabled'));
+          } else {
+            this.flash('error', 'Failed to update AI DJ setting.');
+          }
+        },
+
+        async setDjFrequency(val) {
+          const n = parseInt(val, 10);
+          if (Number.isNaN(n) || n < 1 || n > 20) return;
+          const res = await this.apiPost('/api/admin/config', { dj_submitters_per_interlude: n });
+          if (res.ok) {
+            this.config.dj_submitters_per_interlude = n;
+            this.flash('success', 'DJ frequency set to every ' + n + ' submitter blocks');
           }
         },
 

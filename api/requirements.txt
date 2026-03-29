@@ -50,3 +50,5 @@ pywebpush>=2.0.0
 boto3>=1.35.0
 # WebAuthn/passkey authentication
 webauthn>=2.0.0
+# AI DJ interludes: Gemini LLM script generation + TTS (optional — no-op if GOOGLE_API_KEY unset)
+google-genai>=1.0.0

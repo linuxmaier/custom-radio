@@ -78,6 +78,33 @@ Extracted by `api/audio.py` using librosa:
 
 Normalization bounds are stored in the `config` table and updated after each track is analyzed (`scheduler.py:update_feature_bounds`).
 
+## AI DJ
+
+Implemented in `api/dj.py`. Generates spoken interludes between submitter rotation blocks using Gemini Flash Lite (script) and Gemini TTS (audio). The feature is off by default; toggle in admin panel.
+
+**Trigger timing**: Generation is triggered at the **penultimate track** of the last submitter block before an interlude is due. This gives a full song's duration (~3-4 min) as the generation window before the interlude is needed. The trigger fires in `track-started` via `is_penultimate_submitter_track()`. Generation takes ~25-30 seconds and runs in a background daemon thread.
+
+**Interlude insertion**: `get_next_track()` checks `dj_pending_file` before normal rotation. When set and file exists, it returns the interlude as a DJ_SENTINEL track, advances rotation via `_advance_for_dj()`, and sets `dj_interlude_just_played=True`. The call immediately after the interlude sees `dj_interlude_just_played=True` and returns `dj_reserved_track_id` (the pre-selected first track of the next block) instead of re-running weighted random — ensuring the DJ script's "coming up next" matches what actually plays.
+
+**Config keys** (all in `config` table):
+- `dj_enabled` — feature on/off
+- `dj_submitters_per_interlude` — threshold (how many submitter blocks between interludes)
+- `dj_submitters_since_last_interlude` — rolling counter; reset when interlude plays
+- `dj_generation_needed` — set by `_advance()` when entering the last block before interlude; cleared when trigger fires
+- `dj_pending_file` — path to the generated MP3; set on success, cleared when returned by `get_next_track()`
+- `dj_reserved_track_id` — track ID to play after the interlude; set at trigger time, cleared on generation failure or after consumed
+- `dj_interlude_just_played` — guard flag; only the call immediately after an interlude consumes the reserved track
+
+**Edge cases**:
+- **0-track submitter** (all tracks on cooldown): `_advance()` fires without any `track-started`, `dj_generation_needed` persists to the next real submitter's block
+- **1-track submitter**: treated the same as 0-track — no penultimate exists, generation deferred to the next submitter
+- **Generation failure**: retries once after 10s; if both fail, clears `dj_reserved_track_id` and lets the cycle self-recover (next `_advance()` re-sets `dj_generation_needed`)
+- **Skip during generation window**: if skip fires after generation starts but before `dj_pending_file` is set, the interlude may play at the start of the next block rather than between blocks — acceptable edge case
+
+**Gemini quota**: free tier is 20 script req/day and 10 TTS req/day — far too low for production. Billing must be enabled on the Google AI project. 503 overload errors from Gemini are handled by the retry logic.
+
+**Tests**: `api/tests/test_dj_scheduler.py` covers the reserved track guard logic.
+
 ## Liquidsoap 2.3 Notes
 
 The script at `liquidsoap/radio.liq` targets **Liquidsoap 2.3.0** (`savonet/liquidsoap:v2.3.0`). Several APIs changed from older versions:
