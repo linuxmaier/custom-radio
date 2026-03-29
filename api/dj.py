@@ -66,7 +66,7 @@ def _round_time_label(dt: datetime) -> str:
     elif minute == quarter:
         return label
     else:
-        return f"just past {label}"
+        return f"just after {label}"
 
 
 def _generate_script(
