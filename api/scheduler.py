@@ -74,9 +74,7 @@ def _advance_for_dj():
     (caller resets dj_submitters_since_last_interlude directly).
     """
     with db() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter"
-        ).fetchall()
+        rows = conn.execute("SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter").fetchall()
         submitters = [r["submitter"] for r in rows]
 
     if not submitters:
@@ -119,6 +117,12 @@ def is_penultimate_submitter_track(submitter: str, track_id: str) -> bool:
         ).fetchone()[0]
 
     if played_this_block >= max(1, tracks_per_block - 1):
+        logger.info(
+            "DJ: penultimate check for %s — played_this_block=%d/%d → trigger",
+            submitter,
+            played_this_block,
+            tracks_per_block,
+        )
         return True
 
     # Block isn't full yet — check remaining eligible tracks.
@@ -149,9 +153,17 @@ def is_penultimate_submitter_track(submitter: str, track_id: str) -> bool:
                 (submitter, track_id, last_returned_id),
             ).fetchone()[0]
 
-    # remaining == 1: this is second-to-last (one track left after this)
-    # remaining == 0: 1-track block fallback — interlude will land one track into the next block
-    return remaining <= 1
+    # remaining == 1: one track left after this — this is the penultimate, trigger generation
+    # remaining == 0: 1-track block — no penultimate exists; treat like a 0-track submitter
+    #                 (dj_generation_needed persists into the next real submitter's block)
+    if remaining == 1:
+        logger.info(
+            "DJ: penultimate check for %s — played_this_block=%d, remaining_eligible=1 → trigger",
+            submitter,
+            played_this_block,
+        )
+        return True
+    return False
 
 
 def peek_next_submitter_track() -> dict | None:
@@ -161,9 +173,7 @@ def peek_next_submitter_track() -> dict | None:
     Does not modify any config keys.
     """
     with db() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter"
-        ).fetchall()
+        rows = conn.execute("SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter").fetchall()
         submitters = [r["submitter"] for r in rows]
 
     if not submitters:
@@ -177,9 +187,7 @@ def peek_next_submitter_track() -> dict | None:
     cooldown_active = _cooldown_is_active()
 
     with db() as conn:
-        last_played = conn.execute(
-            "SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1"
-        ).fetchone()
+        last_played = conn.execute("SELECT track_id FROM play_log ORDER BY played_at DESC LIMIT 1").fetchone()
         last_played_id = last_played["track_id"] if last_played else ""
 
         if cooldown_active:
@@ -244,13 +252,53 @@ def get_next_track() -> dict | None:
     submitter so normal scheduling picks up correctly after the interlude plays.
     """
     if get_config("dj_enabled") == "true":
+        # Step 1: interlude just played — return the reserved post-interlude track.
+        # This is the only code path that consumes dj_reserved_track_id, so a skip
+        # cannot prematurely advance past the reserved track.
+        if get_config("dj_interlude_just_played") == "true":
+            set_config("dj_interlude_just_played", "false")
+            reserved_id = get_config("dj_reserved_track_id")
+            set_config("dj_reserved_track_id", "")
+            if reserved_id:
+                with db() as conn:
+                    row = conn.execute(
+                        "SELECT id, title, artist, submitter, file_path FROM tracks WHERE id=? AND status='ready'",
+                        (reserved_id,),
+                    ).fetchone()
+                if row:
+                    logger.info(
+                        "DJ: consuming reserved track %s ('%s' by %s) after interlude",
+                        reserved_id,
+                        row["title"],
+                        row["artist"],
+                    )
+                    set_config("last_returned_track_id", row["id"])
+                    return {
+                        "id": row["id"],
+                        "title": row["title"],
+                        "artist": row["artist"],
+                        "submitter": row["submitter"],
+                        "file_path": row["file_path"],
+                    }
+                logger.warning(
+                    "DJ: reserved track %s not found in DB — falling through to rotation",
+                    reserved_id,
+                )
+
+        # Step 2: interlude is ready — dispatch it.
         pending_file = get_config("dj_pending_file")
         if pending_file and os.path.exists(pending_file):
+            reserved_id = get_config("dj_reserved_track_id")
             set_config("dj_pending_file", "")
             set_config("dj_submitters_since_last_interlude", "0")
             set_config("last_returned_track_id", "")
+            set_config("dj_interlude_just_played", "true")
             _advance_for_dj()
-            logger.info("Returning DJ interlude: %s", pending_file)
+            logger.info(
+                "DJ: dispatching interlude %s (reserved next track: %s)",
+                pending_file,
+                reserved_id or "none",
+            )
             return {
                 "id": DJ_SENTINEL,
                 "title": "Family Radio",
@@ -317,8 +365,7 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
             set_config("dj_submitters_since_last_interlude", str(since))
             threshold = int(get_config("dj_submitters_per_interlude") or "2")
             logger.info("DJ: submitters_since_last_interlude=%d (threshold=%d)", since, threshold)
-            if (since >= threshold - 1
-                    and not get_config("dj_pending_file")):
+            if since >= threshold - 1 and not get_config("dj_pending_file"):
                 set_config("dj_generation_needed", "true")
                 logger.info("DJ: generation needed — entering last block before interlude")
 

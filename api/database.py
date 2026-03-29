@@ -116,6 +116,8 @@ CONFIG_DEFAULTS = {
     "dj_submitters_since_last_interlude": "0",
     "dj_generation_needed": "false",
     "dj_pending_file": "",
+    "dj_reserved_track_id": "",
+    "dj_interlude_just_played": "false",
     "feature_min_tempo_bpm": "0",
     "feature_max_tempo_bpm": "1",
     "feature_min_rms_energy": "0",

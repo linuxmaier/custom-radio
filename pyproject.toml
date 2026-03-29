@@ -36,6 +36,8 @@ ignore = [
 "api/scheduler.py" = ["S311"]
 # S101: assert used for type narrowing after has_file guard
 "api/routers/submit.py" = ["S101"]
+# S101: assert is idiomatic in pytest tests
+"api/tests/**" = ["S101"]
 
 [tool.ty.environment]
 python-version = "3.12"

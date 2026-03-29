@@ -184,6 +184,7 @@ def trigger_generation(recent_tracks: list[dict], next_track: dict, estimated_pl
             path = generate_interlude(recent_tracks, next_track, estimated_play_time)
             set_config("dj_pending_file", path)
         except Exception:
-            logger.error("DJ interlude generation failed", exc_info=True)
+            logger.error("DJ interlude generation failed — clearing reserved track", exc_info=True)
+            set_config("dj_reserved_track_id", "")
 
     threading.Thread(target=_run, daemon=True, name="dj-generator").start()

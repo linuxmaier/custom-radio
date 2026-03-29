@@ -79,6 +79,7 @@ def track_started(track_id: str):
         set_config("dj_generation_needed", "false")
         peeked = peek_next_submitter_track()
         if peeked:
+            set_config("dj_reserved_track_id", peeked["id"])
             with db() as conn:
                 recent_rows = conn.execute(
                     """
@@ -90,12 +91,17 @@ def track_started(track_id: str):
                     """,
                 ).fetchall()
             recent_tracks = [
-                {"title": r["title"], "artist": r["artist"], "submitter": r["submitter"]}
-                for r in reversed(recent_rows)
+                {"title": r["title"], "artist": r["artist"], "submitter": r["submitter"]} for r in reversed(recent_rows)
             ]
 
             estimated_play_time = datetime.now(UTC) + timedelta(seconds=float(duration_s or 180))
-            logger.info("DJ: triggering generation (submitter=%s, last track of block)", submitter)
+            logger.info(
+                "DJ: triggering generation at penultimate track (submitter=%s); reserved next: %s ('%s' by %s)",
+                submitter,
+                peeked["id"],
+                peeked["title"],
+                peeked["artist"],
+            )
             trigger_generation(recent_tracks, peeked, estimated_play_time)
 
     return {"ok": True}
