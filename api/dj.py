@@ -116,9 +116,14 @@ def _generate_script(recent_tracks: list[dict], next_track: dict, ct_label: str,
         model="gemini-2.5-flash-lite",
         contents=prompt,
     )
-    # Strip parenthetical stage directions and markdown emphasis the model inserts despite
-    # instructions, then collapse any double spaces or extra blank lines left by the removal.
-    text = re.sub(r"\([^)]*\)", "", response.text)
+    # Strip parenthetical stage directions the model inserts despite instructions.
+    # Target only the two patterns stage directions follow:
+    #   1. A line consisting solely of a parenthetical (e.g. "(Sound of a jingle)")
+    #   2. A parenthetical appearing after sentence-ending punctuation (e.g. "didn't it? (Ad break)")
+    # This leaves mid-sentence parentheticals like song titles "(Da Ba Dee)" untouched.
+    text = re.sub(r"^\s*\([^)]*\)\s*$", "", response.text, flags=re.MULTILINE)
+    text = re.sub(r"(?<=[.!?])\s+\([^)]*\)", "", text)
+    # Strip markdown emphasis asterisks the model also occasionally inserts.
     text = re.sub(r"\*+", "", text)
     text = re.sub(r"  +", " ", text).strip()
     return re.sub(r"\n{3,}", "\n\n", text)
