@@ -2,6 +2,7 @@
 
 import logging
 import os
+import random
 import subprocess
 import tempfile
 import threading
@@ -11,7 +12,7 @@ import wave
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from database import set_config
+from database import get_config, set_config
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,18 @@ def _generate_script(recent_tracks: list[dict], next_track: dict, ct_label: str,
 
     recent_lines = "\n".join(f'- "{t["title"]}" by {t["artist"]}, submitted by {t["submitter"]}' for t in recent_tracks)
 
+    opening_styles = [
+        "Open by zeroing in on one specific or surprising detail from one of the songs"
+        " — a lyric, an instrument, a mood.",
+        "Open with a wry, affectionate one-liner about one submitter's taste.",
+        "Open with a question or playful observation addressed directly to the listener.",
+        "Open with an unexpected comparison — something the songs have in common that wouldn't be obvious.",
+        "Open in the middle of a thought about how the last song ended or felt, then pull back to recap the set.",
+    ]
+    opening_style = random.choice(opening_styles)  # noqa: S311
+
+    prev_scripts = [s for s in [get_config("dj_prev_script"), get_config("dj_last_script")] if s]
+
     ad_examples = (
         "artisanal bird sticker makers, a pet rock boarding kennel, "
         "a financial investment firm that only deals in Monopoly money, "
@@ -68,18 +81,34 @@ def _generate_script(recent_tracks: list[dict], next_track: dict, ct_label: str,
         "You are a warm, witty FM radio DJ hosting a cozy family internet radio station"
         " where real people submit their favourite songs.\n\n"
         "Write a short radio DJ interlude, about 90 words when spoken aloud. Structure it as:\n"
-        "1. A brief recap of the last 3 songs — mention the submitters naturally in passing,"
-        " like a DJ would name-drop a dedication, not like you're thanking them profusely."
-        " Keep it snappy; don't linger on compliments.\n"
+        f"1. A brief recap of the last 3 songs. {opening_style} Mention the submitters naturally"
+        " in passing, like a DJ would name-drop a dedication, not like you're thanking them profusely."
+        " Keep it snappy; don't linger on compliments. Avoid generic travel metaphors (journey, ride,"
+        " trip, rollercoaster) to describe the set as a whole — if you reference movement or"
+        " progression, tie it to something specific in the songs.\n"
         f"2. A fake radio ad (~20 seconds) for a silly, well-meaning-but-useless small business."
-        f" Think Portlandia energy: {ad_examples}."
+        f" Think Portlandia energy — for flavour, here are some example business types: {ad_examples}."
+        " Invent a wholly new business of your own; don't reuse or closely riff on these examples."
         " Earnest, absurdly specific, confident about the value they provide.\n"
         f'3. A time check: "It\'s heading up on {ct_label} Central, {pt_label} Pacific."\n'
         "4. A brief warm intro for the next track.\n\n"
         f"Recent tracks played:\n{recent_lines}\n\n"
         f'Next track: "{next_track["title"]}" by {next_track["artist"]},'
         f" submitted by {next_track['submitter']}\n\n"
-        "Write only spoken words. No stage directions, no brackets, no sound effect descriptions."
+        + (
+            "For variety, here are the last {} interlude{} you generated. Do not reuse the same ad"
+            " concept or descriptive imagery from {}:\n\n{}\n\n".format(
+                len(prev_scripts),
+                "s" if len(prev_scripts) > 1 else "",
+                "either of them" if len(prev_scripts) > 1 else "it",
+                "\n\n---\n\n".join(prev_scripts),
+            )
+            if prev_scripts
+            else ""
+        )
+        + "Write only the words the DJ speaks. This text goes directly to a text-to-speech engine, so"
+        " anything you write will be read aloud literally — no stage directions, no sound effect"
+        " descriptions, no parentheses, no brackets, no asterisks, no markdown."
     )
 
     response = client.models.generate_content(
@@ -167,6 +196,10 @@ def generate_interlude(recent_tracks: list[dict], next_track: dict, estimated_pl
 
     script = _generate_script(recent_tracks, next_track, ct_label, pt_label)
     logger.info("DJ script: %.120s", script)
+
+    # Rotate script history: prev ← last ← new
+    set_config("dj_prev_script", get_config("dj_last_script"))
+    set_config("dj_last_script", script)
 
     clip_path = os.path.join(_dj_dir(), f"{uuid.uuid4()}.mp3")
     _synthesize_to_mp3(script, clip_path)

@@ -118,6 +118,8 @@ CONFIG_DEFAULTS = {
     "dj_pending_file": "",
     "dj_reserved_track_id": "",
     "dj_interlude_just_played": "false",
+    "dj_last_script": "",
+    "dj_prev_script": "",
     "feature_min_tempo_bpm": "0",
     "feature_max_tempo_bpm": "1",
     "feature_min_rms_energy": "0",
