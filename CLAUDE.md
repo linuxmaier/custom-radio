@@ -42,7 +42,7 @@ Routers in `api/routers/`:
 
 All public routes go through nginx at `/api/`. Internal routes are Docker-network-only (blocked by nginx).
 
-User endpoints (all routes except `/auth/request-access`, `/auth/verify`, `/auth/claim`, `/auth/bootstrap`, and `/push/vapid-key`) require a valid session cookie via `require_user` (FastAPI `Depends`). The dependency reads the `session` cookie, hashes it, joins `sessions` + `users`, checks expiry, slides the session TTL, and returns `{id, email, name, status}`. 401 is raised for missing/invalid/expired sessions.
+User endpoints (all routes except `/auth/request-access`, `/auth/verify`, `/auth/claim`, `/auth/bootstrap`, and `/push/vapid-key`) require a valid session cookie via `require_user` (FastAPI `Depends`). The dependency reads the `session` cookie, hashes it, joins `sessions` + `users`, checks expiry, slides the session TTL, and returns `{id, email, name, pronouns, status}`. 401 is raised for missing/invalid/expired sessions.
 
 Admin endpoints are authenticated via the `X-Admin-Token` request header (value = `ADMIN_TOKEN` env var, no "Bearer" prefix).
 
@@ -54,7 +54,7 @@ Admin endpoints are authenticated via the `X-Admin-Token` request header (value 
 
 SQLite at `/data/radio.db` (Docker volume). Schema initialised in `database.py:init_db()`. Tables: `tracks`, `play_log`, `jobs`, `config`, `push_subscriptions`, `users`, `auth_tokens`, `claim_codes`, `sessions`, `passkey_credentials`, `passkey_challenges`.
 
-Auth tables added in Phase 1 per-user auth: `users` (email, name, status: pending/approved/rejected), `auth_tokens` (magic link tokens; 15-min TTL, single-use), `claim_codes` (6-digit bridge codes for cross-browser PWA cookie scoping; 5-min TTL, single-use), `sessions` (httpOnly cookie sessions; 30-day sliding TTL). All token/code values are stored as SHA-256 hashes. Foreign keys with ON DELETE CASCADE propagate user deletion to all auth rows. `tracks.user_id` and `push_subscriptions.user_id` are nullable FK references to `users.id` (added via ALTER migration).
+Auth tables added in Phase 1 per-user auth: `users` (email, name, pronouns, status: pending/approved/rejected), `auth_tokens` (magic link tokens; 15-min TTL, single-use), `claim_codes` (6-digit bridge codes for cross-browser PWA cookie scoping; 5-min TTL, single-use), `sessions` (httpOnly cookie sessions; 30-day sliding TTL). All token/code values are stored as SHA-256 hashes. Foreign keys with ON DELETE CASCADE propagate user deletion to all auth rows. `tracks.user_id` and `push_subscriptions.user_id` are nullable FK references to `users.id` (added via ALTER migration).
 
 Auth tables added in Phase 2 passkeys: `passkey_credentials` (id: credential_id b64url PK, user_id FK, public_key blob, sign_count, aaguid, created_at, last_used_at), `passkey_challenges` (challenge b64url PK, user_id nullable FK, type: `registration`|`authentication`, expires_at; 5-min TTL; deleted on consume or at next challenge insert).
 
@@ -83,6 +83,12 @@ Normalization bounds are stored in the `config` table and updated after each tra
 Implemented in `api/dj.py`. Generates spoken interludes between submitter rotation blocks using Gemini Flash Lite (script) and Gemini TTS (audio). The feature is off by default; toggle in admin panel.
 
 **Trigger timing**: Generation is triggered at the **penultimate track** of the last submitter block before an interlude is due. This gives a full song's duration (~3-4 min) as the generation window before the interlude is needed. The trigger fires in `track-started` via `is_penultimate_submitter_track()`. Generation takes ~25-30 seconds and runs in a background daemon thread.
+
+**Next-track reservation** (`peek_next_submitter_track`): loops through subsequent submitters (not just +1) to find one with eligible tracks, mirroring the skip logic in `_pick_rotation_track`. This ensures DJ generation is not silently suppressed when the immediately next submitter has all tracks on cooldown.
+
+**Pronouns**: `users.pronouns` (free-text, e.g. `they/them`) is looked up at trigger time for all submitters involved in the interlude and passed to `_generate_script`. The prompt instructs Gemini to use them exactly; defaults to they/them for anyone not listed.
+
+**Time label** (`_round_time_label`): rounds to the nearest quarter hour. Before the mark → `"heading up on quarter to 4 PM"`; after → `"just after quarter to 4 PM"`; exactly on → `"quarter to 4 PM"`. The prompt uses `"It's {ct_label} Central, {pt_label} Pacific"` — do not add a hardcoded `"heading up on"` prefix since the label already carries directional phrasing.
 
 **Interlude insertion**: `get_next_track()` checks `dj_pending_file` before normal rotation. When set and file exists, it returns the interlude as a DJ_SENTINEL track, advances rotation via `_advance_for_dj()`, and sets `dj_interlude_just_played=True`. The call immediately after the interlude sees `dj_interlude_just_played=True` and returns `dj_reserved_track_id` (the pre-selected first track of the next block) instead of re-running weighted random — ensuring the DJ script's "coming up next" matches what actually plays.
 
@@ -128,7 +134,7 @@ The frontend is a single-page app (`frontend/index.html`) using Alpine.js v3 wit
 - Library and admin views are lazy-loaded: `shell.init()` watches `view` and dispatches `load-library` / `load-admin` window events on first navigation to those views
 
 **Auth state in `shell()`:**
-- `user` — `{id, email, name}` or `null`; `authChecked` — `false` until `GET /api/auth/me` resolves (prevents flash of unauthed content)
+- `user` — `{id, email, name, pronouns}` or `null`; `authChecked` — `false` until `GET /api/auth/me` resolves (prevents flash of unauthed content)
 - `loginState` — `'email'` | `'pending'` | `'code'`; `loginEmail`, `loginMsg`, `loginError`, `loginBusy`, `claimCode`
 - `setupName`, `setupError`, `setupBusy` — for display-name-setup view shown on first login; `claimableNames: []` — populated by `GET /api/auth/claimable-names` when setup view appears; allows existing submitters to reclaim their track history by picking their name
 - `shareUrl` — YouTube URL captured from Android Web Share Target query params (`?url=` or `?text=`); set synchronously in `init()` before the auth fetch, cleared by `initSubmit()` after pre-filling the form
@@ -148,6 +154,8 @@ The frontend is a single-page app (`frontend/index.html`) using Alpine.js v3 wit
 **Views added by auth:**
 - `login` — three states: email entry → `POST /api/auth/request-access` (approved users get magic link; others see pending message); code entry → `POST /api/auth/claim` → cookie set, `needs_name` check. Passkey users can sign in without email via the passkey flow (no code needed).
 - `setup` — display name input, shown after first login when `user.name === null` → `PATCH /api/auth/me`. Includes a `<datalist>` of claimable submitter names from `GET /api/auth/claimable-names`; picking an existing name backfills `tracks.user_id` for all matching unclaimed tracks.
+
+`PATCH /auth/me` accepts `{name?, pronouns?}` and updates each field independently — either or both may be present. Returns `{ok, name, pronouns}`. Users can edit their pronouns from the Profile page at any time; a format hint ("Examples: she/her · he/him · they/them · she/they") is shown below the input.
 
 **Alpine.js scope in nested `x-data`:** nested components (`submitView()`, `libraryView()`, `adminView()`) access parent `shell()` properties via direct property names (e.g. `user`, `nowPlaying`). Do NOT use `$root.user` — `$root` in Alpine v3 does not reliably expose parent `x-data` properties in nested scopes.
 
