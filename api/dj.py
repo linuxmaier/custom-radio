@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 import wave
 from datetime import datetime
@@ -67,7 +68,9 @@ def _generate_script(recent_tracks: list[dict], next_track: dict, ct_label: str,
         "You are a warm, witty FM radio DJ hosting a cozy family internet radio station"
         " where real people submit their favourite songs.\n\n"
         "Write a short radio DJ interlude, about 90 words when spoken aloud. Structure it as:\n"
-        "1. A warm recap of the last few songs and who submitted them\n"
+        "1. A brief recap of the last 3 songs — mention the submitters naturally in passing,"
+        " like a DJ would name-drop a dedication, not like you're thanking them profusely."
+        " Keep it snappy; don't linger on compliments.\n"
         f"2. A fake radio ad (~20 seconds) for a silly, well-meaning-but-useless small business."
         f" Think Portlandia energy: {ad_examples}."
         " Earnest, absurdly specific, confident about the value they provide.\n"
@@ -180,11 +183,24 @@ def trigger_generation(recent_tracks: list[dict], next_track: dict, estimated_pl
     """
 
     def _run():
-        try:
-            path = generate_interlude(recent_tracks, next_track, estimated_play_time)
-            set_config("dj_pending_file", path)
-        except Exception:
-            logger.error("DJ interlude generation failed — clearing reserved track", exc_info=True)
-            set_config("dj_reserved_track_id", "")
+        for attempt in range(1, 3):
+            try:
+                path = generate_interlude(recent_tracks, next_track, estimated_play_time)
+                set_config("dj_pending_file", path)
+                return
+            except Exception:
+                if attempt < 2:
+                    logger.warning(
+                        "DJ interlude generation failed (attempt %d/2), retrying in 10s",
+                        attempt,
+                        exc_info=True,
+                    )
+                    time.sleep(10)
+                else:
+                    logger.error(
+                        "DJ interlude generation failed after 2 attempts — clearing reserved track",
+                        exc_info=True,
+                    )
+                    set_config("dj_reserved_track_id", "")
 
     threading.Thread(target=_run, daemon=True, name="dj-generator").start()

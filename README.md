@@ -345,6 +345,8 @@ The AI DJ feature inserts a short spoken interlude between every N submitter blo
 
 A Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey). Uses `gemini-2.5-flash-lite` for script generation and `gemini-2.5-flash-preview-tts` for speech synthesis.
 
+> **Note**: The Gemini free tier limits are very low (20 script requests/day, 10 TTS requests/day). Enable billing on the Google AI project for production use — cost per interlude is a few cents at most.
+
 ### Configuration
 
 Add to `.env`:
@@ -358,9 +360,8 @@ Then enable the AI DJ toggle in the admin panel. The frequency (submitter blocks
 ### How it works
 
 - When a submitter block completes, a counter increments. When it reaches the configured threshold, the scheduler flags that an interlude is needed.
-- On the next `track-started` event, the API pre-selects the track that will follow the interlude, then generates the script + audio in a background thread.
-- The interlude MP3 is stored in `/media/dj/` and returned to Liquidsoap like any other track. If generation fails, the interlude is silently skipped and music continues uninterrupted.
-- Cost is approximately $0.005 per interlude.
+- At the **penultimate track** of the last block before an interlude, the API pre-selects the first track of the next block and starts generating script + audio in a background thread. Generation takes ~25-30 seconds; triggering one track early gives a full song's duration as the generation window.
+- The interlude MP3 is stored in `/media/dj/` and returned to Liquidsoap like any other track, followed immediately by the pre-selected next track. If generation fails it retries once after 10 seconds; if both attempts fail the interlude is silently skipped and music continues uninterrupted.
 
 ## Project Structure
 

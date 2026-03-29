@@ -80,6 +80,7 @@ def track_started(track_id: str):
         peeked = peek_next_submitter_track()
         if peeked:
             set_config("dj_reserved_track_id", peeked["id"])
+            last_track_id = get_config("last_returned_track_id")
             with db() as conn:
                 recent_rows = conn.execute(
                     """
@@ -87,14 +88,38 @@ def track_started(track_id: str):
                     FROM play_log pl
                     JOIN tracks t ON pl.track_id = t.id
                     ORDER BY pl.played_at DESC
-                    LIMIT 4
+                    LIMIT 3
                     """,
                 ).fetchall()
+                last_track_row = (
+                    conn.execute(
+                        "SELECT title, artist, submitter FROM tracks WHERE id=?",
+                        (last_track_id,),
+                    ).fetchone()
+                    if last_track_id
+                    else None
+                )
             recent_tracks = [
                 {"title": r["title"], "artist": r["artist"], "submitter": r["submitter"]} for r in reversed(recent_rows)
             ]
-
-            estimated_play_time = datetime.now(UTC) + timedelta(seconds=float(duration_s or 180))
+            if last_track_row:
+                recent_tracks.append(
+                    {
+                        "title": last_track_row["title"],
+                        "artist": last_track_row["artist"],
+                        "submitter": last_track_row["submitter"],
+                    }
+                )
+                recent_tracks = recent_tracks[-3:]
+            last_track_duration_s = 0.0
+            if last_track_id:
+                with db() as conn:
+                    last_row = conn.execute("SELECT duration_s FROM tracks WHERE id=?", (last_track_id,)).fetchone()
+                if last_row and last_row["duration_s"]:
+                    last_track_duration_s = float(last_row["duration_s"])
+            estimated_play_time = datetime.now(UTC) + timedelta(
+                seconds=float(duration_s or 180) + last_track_duration_s
+            )
             logger.info(
                 "DJ: triggering generation at penultimate track (submitter=%s); reserved next: %s ('%s' by %s)",
                 submitter,
