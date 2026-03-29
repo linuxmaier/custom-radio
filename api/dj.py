@@ -90,10 +90,10 @@ def _generate_script(recent_tracks: list[dict], next_track: dict, ct_label: str,
         f"2. A fake radio ad (~20 seconds) for a silly, well-meaning-but-useless small business."
         f" Think Portlandia energy — for flavour, here are some example business types: {ad_examples}."
         " Invent a wholly new business of your own; don't reuse or closely riff on these examples."
-        " Do this in two steps: first, write one sentence starting with exactly 'First idea:' describing"
-        " your initial business concept. Then write the actual ad for something one notch weirder and"
-        " more absurdly specific. Neither the first nor the second idea should resemble anything used"
-        " in the previous interludes."
+        " Do this in two steps: first, on its own line, write one sentence starting with exactly"
+        " 'First idea:' describing your initial business concept. Then, on a new line, write the"
+        " actual ad for something one notch weirder and more absurdly specific. Neither the first"
+        " nor the second idea should resemble anything used in the previous interludes."
         " Earnest, absurdly specific, confident about the value they provide.\n"
         f'3. A time check: "It\'s heading up on {ct_label} Central, {pt_label} Pacific."\n'
         "4. A brief warm intro for the next track.\n\n"
@@ -121,14 +121,16 @@ def _generate_script(recent_tracks: list[dict], next_track: dict, ct_label: str,
         contents=prompt,
     )
     # Strip the "First idea: ..." line we ask the model to write before discarding.
-    text = re.sub(r"(?i)^first idea:[^\n]*\n?", "", response.text, flags=re.MULTILINE)
-    # Strip parenthetical stage directions the model inserts despite instructions.
+    # The prompt asks for it on its own line; [^\n]* before the anchor handles any
+    # rare cases where the model prepends a flourish on the same line anyway.
+    text = re.sub(r"(?i)^[^\n]*\bfirst idea:[^\n]*\n?", "", response.text, flags=re.MULTILINE)
+    # Strip parenthetical/bracketed stage directions the model inserts despite instructions.
     # Target only the two patterns stage directions follow:
-    #   1. A line consisting solely of a parenthetical (e.g. "(Sound of a jingle)")
-    #   2. A parenthetical appearing after sentence-ending punctuation (e.g. "didn't it? (Ad break)")
+    #   1. A line consisting solely of a directive (e.g. "(Sound of a jingle)" or "[Upbeat music]")
+    #   2. A directive appearing after sentence-ending punctuation (e.g. "didn't it? (Ad break)")
     # This leaves mid-sentence parentheticals like song titles "(Da Ba Dee)" untouched.
-    text = re.sub(r"^\s*\([^)]*\)\s*$", "", text, flags=re.MULTILINE)
-    text = re.sub(r"(?<=[.!?])\s+\([^)]*\)", "", text)
+    text = re.sub(r"^\s*(?:\([^)]*\)|\[[^\]]*\])\s*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"(?<=[.!?])\s+(?:\([^)]*\)|\[[^\]]*\])", "", text)
     # Strip markdown emphasis asterisks the model also occasionally inserts.
     text = re.sub(r"\*+", "", text)
     text = re.sub(r"  +", " ", text).strip()
