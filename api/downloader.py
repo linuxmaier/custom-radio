@@ -36,7 +36,7 @@ def download_youtube(url: str, track_id: str) -> tuple[str, str, str]:
         "--extractor-args",
         "youtubepot-bgutilhttp:base_url=http://bgutil-provider:4416",
         "--extractor-args",
-        "youtube:player_client=web_safari",
+        "youtube:player_client=mweb",
     ]
 
     # Copy cookies to a temp file so yt-dlp cannot overwrite the uploaded original.
