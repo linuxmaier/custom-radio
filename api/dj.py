@@ -109,6 +109,7 @@ def _generate_script(
         "Open in the middle of a thought about how the last song ended or felt, then pull back to recap the set.",
     ]
     opening_style = random.choice(opening_styles)  # noqa: S311
+    logger.info("DJ opening style: %s", opening_style[:60])
 
     prev_scripts = [s for s in [get_config("dj_prev_script"), get_config("dj_last_script")] if s]
 
