@@ -102,7 +102,8 @@ def _generate_script(
     opening_styles = [
         "Open by zeroing in on one specific or surprising detail from one of the songs"
         " — a lyric, an instrument, a mood.",
-        "Open with a wry, affectionate one-liner about the vibe or mood of the set — rooted in the music, not directed at a submitter.",
+        "Open with a wry, affectionate one-liner about the vibe or mood of the set"
+        " — rooted in the music, not directed at a submitter.",
         "Open with a question or playful observation addressed directly to the listener — not to a submitter.",
         "Open with an unexpected comparison — something the songs have in common that wouldn't be obvious.",
         "Open in the middle of a thought about how the last song ended or felt, then pull back to recap the set.",
@@ -129,10 +130,10 @@ def _generate_script(
         f"2. A fake radio ad (~20 seconds) for a silly, well-meaning-but-useless small business."
         f" Think Portlandia energy — for flavour, here are some example business types: {ad_examples}."
         " Invent a wholly new business of your own; don't reuse or closely riff on these examples."
-        " Do this in two steps: first, on its own line, write one sentence starting with exactly"
-        " 'First idea:' describing your initial business concept. Then, on a new line, write the"
-        " actual ad for something one notch weirder and more absurdly specific. Neither the first"
-        " nor the second idea should resemble anything used in the previous interludes."
+        " Do this in two steps: first write one sentence wrapped in [CONCEPT]...[/CONCEPT] tags"
+        " describing your initial business concept. Then write the actual ad for something one notch"
+        " weirder and more absurdly specific, wrapped in [AD]...[/AD] tags. Neither the concept nor"
+        " the ad should resemble anything used in the previous ads."
         " Earnest, absurdly specific, confident about the value they provide.\n"
         f'3. A time check: "It\'s {ct_label} Central, {pt_label} Pacific."\n'
         "4. A brief warm intro for the next track.\n\n"
@@ -140,11 +141,11 @@ def _generate_script(
         f'Next track: "{next_track["title"]}" by {next_track["artist"]},'
         f" submitted by {next_track['submitter']}\n\n"
         + (
-            "For variety, here are the last {} interlude{} you generated. Do not reuse the same ad"
-            " concept or descriptive imagery from {}:\n\n{}\n\n".format(
+            "For variety, here are the last {} ad concept{} you used. Do not reuse"
+            " {} or anything similar:\n\n{}\n\n".format(
                 len(prev_scripts),
                 "s" if len(prev_scripts) > 1 else "",
-                "either of them" if len(prev_scripts) > 1 else "it",
+                "any of them" if len(prev_scripts) > 1 else "it",
                 "\n\n---\n\n".join(prev_scripts),
             )
             if prev_scripts
@@ -159,10 +160,16 @@ def _generate_script(
         model="gemini-2.5-flash-lite",
         contents=prompt,
     )
-    # Strip the "First idea: ..." line we ask the model to write before discarding.
-    # The prompt asks for it on its own line; [^\n]* before the anchor handles any
-    # rare cases where the model prepends a flourish on the same line anyway.
-    text = re.sub(r"(?i)^[^\n]*\bfirst idea:[^\n]*\n?", "", response.text, flags=re.MULTILINE)
+    raw = response.text
+
+    # Extract ad text for history (before stripping tags).
+    ad_match = re.search(r"\[AD\](.*?)\[/AD\]", raw, re.DOTALL | re.IGNORECASE)
+    ad_text = ad_match.group(1).strip() if ad_match else ""
+
+    # Strip [CONCEPT]...[/CONCEPT] blocks entirely (chain-of-thought, not for TTS).
+    text = re.sub(r"\[CONCEPT\].*?\[/CONCEPT\]\s*", "", raw, flags=re.DOTALL | re.IGNORECASE)
+    # Strip [AD] and [/AD] markers, keeping the ad content for TTS.
+    text = re.sub(r"\[/?AD\]", "", text, flags=re.IGNORECASE)
     # Strip parenthetical/bracketed stage directions the model inserts despite instructions.
     # Target only the two patterns stage directions follow:
     #   1. A line consisting solely of a directive (e.g. "(Sound of a jingle)" or "[Upbeat music]")
@@ -173,7 +180,7 @@ def _generate_script(
     # Strip markdown emphasis asterisks the model also occasionally inserts.
     text = re.sub(r"\*+", "", text)
     text = re.sub(r"  +", " ", text).strip()
-    return re.sub(r"\n{3,}", "\n\n", text)
+    return re.sub(r"\n{3,}", "\n\n", text), ad_text
 
 
 def _synthesize_to_mp3(script: str, output_path: str):
@@ -257,12 +264,13 @@ def generate_interlude(
         pt_label,
     )
 
-    script = _generate_script(recent_tracks, next_track, ct_label, pt_label, submitter_pronouns)
+    script, ad_text = _generate_script(recent_tracks, next_track, ct_label, pt_label, submitter_pronouns)
     logger.info("DJ script: %.120s", script)
 
-    # Rotate script history: prev ← last ← new
+    # Rotate ad history: prev ← last ← new (store only the ad, not the full script,
+    # so history context doesn't bleed opening style into future generations)
     set_config("dj_prev_script", get_config("dj_last_script"))
-    set_config("dj_last_script", script)
+    set_config("dj_last_script", ad_text)
 
     clip_path = os.path.join(_dj_dir(), f"{uuid.uuid4()}.mp3")
     _synthesize_to_mp3(script, clip_path)
