@@ -122,9 +122,10 @@ def _generate_script(
         " where real people submit their favourite songs.\n\n"
         + pronoun_section
         + "Write a short radio DJ interlude, about 90 words when spoken aloud. Structure it as:\n"
-        f"1. A brief recap of the last 3 songs. {opening_style} Mention the submitters naturally"
-        " in passing, like a DJ would name-drop a dedication, not like you're thanking them profusely."
-        " Keep it snappy; don't linger on compliments. Avoid generic travel metaphors (journey, ride,"
+        f"1. A brief recap of the last 3 songs. {opening_style} Focus on the music — the songs,"
+        " the sounds, the mood. If you reference a submitter by name, keep it brief and incidental,"
+        " like a DJ casually name-dropping a dedication — don't linger on compliments."
+        " Avoid generic travel metaphors (journey, ride,"
         " trip, rollercoaster) to describe the set as a whole — if you reference movement or"
         " progression, tie it to something specific in the songs.\n"
         f"2. A fake radio ad (~20 seconds) for a silly, well-meaning-but-useless small business."
