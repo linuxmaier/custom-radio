@@ -90,6 +90,8 @@ Implemented in `api/dj.py`. Generates spoken interludes between submitter rotati
 
 **Time label** (`_round_time_label`): rounds to the nearest quarter hour. Before the mark → `"heading up on quarter to 4 PM"`; after → `"just after quarter to 4 PM"`; exactly on → `"quarter to 4 PM"`. The prompt uses `"It's {ct_label} Central, {pt_label} Pacific"` — do not add a hardcoded `"heading up on"` prefix since the label already carries directional phrasing.
 
+**Script generation** (`_generate_script`): returns `tuple[str, str]` — `(tts_ready_script, ad_text)`. The prompt asks the model to wrap its initial ad concept in `[CONCEPT]...[/CONCEPT]` (stripped entirely before TTS — chain-of-thought only) and the final ad in `[AD]...[/AD]` (markers stripped, content kept for TTS). Only `ad_text` is stored in history — storing full scripts caused the model to pattern-match on previous opening structures and address submitters directly every time. Opening style is randomly selected from 5 options at generation time and logged (`DJ opening style: ...`). The recap instruction focuses on the music rather than directing the model to mention submitters; submitter references are incidental, not mandated.
+
 **Interlude insertion**: `get_next_track()` checks `dj_pending_file` before normal rotation. When set and file exists, it returns the interlude as a DJ_SENTINEL track, advances rotation via `_advance_for_dj()`, and sets `dj_interlude_just_played=True`. The call immediately after the interlude sees `dj_interlude_just_played=True` and returns `dj_reserved_track_id` (the pre-selected first track of the next block) instead of re-running weighted random — ensuring the DJ script's "coming up next" matches what actually plays.
 
 **Config keys** (all in `config` table):
@@ -100,6 +102,8 @@ Implemented in `api/dj.py`. Generates spoken interludes between submitter rotati
 - `dj_pending_file` — path to the generated MP3; set on success, cleared when returned by `get_next_track()`
 - `dj_reserved_track_id` — track ID to play after the interlude; set at trigger time, cleared on generation failure or after consumed
 - `dj_interlude_just_played` — guard flag; only the call immediately after an interlude consumes the reserved track
+- `dj_last_script` — ad text (not full script) from the most recent interlude; fed back into the prompt to prevent repeated ad concepts
+- `dj_prev_script` — ad text from the interlude before that; same purpose. Storing only ad text (not full scripts) prevents history from bleeding opening style patterns into future generations.
 
 **Edge cases**:
 - **0-track submitter** (all tracks on cooldown): `_advance()` fires without any `track-started`, `dj_generation_needed` persists to the next real submitter's block
