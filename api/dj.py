@@ -100,13 +100,22 @@ def _generate_script(
         )
 
     opening_styles = [
-        "Open by zeroing in on one specific or surprising detail from one of the songs"
-        " — a lyric, an instrument, a mood.",
-        "Open with a wry, affectionate one-liner about the vibe or mood of the set"
-        " — rooted in the music, not directed at a submitter.",
-        "Open with a question or playful observation addressed directly to the listener — not to a submitter.",
-        "Open with an unexpected comparison — something the songs have in common that wouldn't be obvious.",
-        "Open in the middle of a thought about how the last song ended or felt, then pull back to recap the set.",
+        "Start with the name of a song, a lyric, or a specific sound from one of the recent"
+        " tracks — then pull back to the set as a whole. Don't begin with an exclamation like"
+        " 'Wow' or 'Well'.",
+        "Open with a single wry sentence about the texture, energy level, or emotional"
+        " temperature of the set — something specific to the music. Not a movement metaphor"
+        " ('journey', 'ride', 'run', 'amble', 'float'), not directed at a submitter."
+        " Don't begin with 'Wow' or 'Well'.",
+        "Start with a direct question to the listener about something in the music —"
+        " 'Did you catch...?', 'Can we talk about...?', 'What was that...?' — not about"
+        " who submitted it. Don't begin with 'Wow' or 'Well'.",
+        "Lead with an unexpected comparison between two of the songs — something they share"
+        " that wouldn't be obvious. Start the sentence with the comparison itself, not a"
+        " preamble like 'What a...' or 'We just...'.",
+        "Start mid-sentence as if already in the middle of a thought about the last song —"
+        " as if you forgot to turn the mic off. Don't begin with 'Wow', 'Well', or any"
+        " exclamation.",
     ]
     opening_style = random.choice(opening_styles)  # noqa: S311
     logger.info("DJ opening style: %s", opening_style[:60])
@@ -167,6 +176,10 @@ def _generate_script(
     # Extract ad text for history (before stripping tags).
     ad_match = re.search(r"\[AD\](.*?)\[/AD\]", raw, re.DOTALL | re.IGNORECASE)
     ad_text = ad_match.group(1).strip() if ad_match else ""
+    if ad_text:
+        logger.info("DJ: ad text extracted (%d chars)", len(ad_text))
+    else:
+        logger.warning("DJ: [AD] tags not found in response — ad history will not be updated")
 
     # Strip [CONCEPT]...[/CONCEPT] blocks entirely (chain-of-thought, not for TTS).
     text = re.sub(r"\[CONCEPT\].*?\[/CONCEPT\]\s*", "", raw, flags=re.DOTALL | re.IGNORECASE)
@@ -267,7 +280,7 @@ def generate_interlude(
     )
 
     script, ad_text = _generate_script(recent_tracks, next_track, ct_label, pt_label, submitter_pronouns)
-    logger.info("DJ script: %.120s", script)
+    logger.info("DJ script: %.300s", script)
 
     # Rotate ad history: prev ← last ← new (store only the ad, not the full script,
     # so history context doesn't bleed opening style into future generations)

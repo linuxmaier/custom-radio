@@ -136,6 +136,10 @@ def track_started(track_id: str):
                 peeked["title"],
                 peeked["artist"],
             )
+            logger.info(
+                "DJ: recent_tracks: %s",
+                [(t["title"][:35], t["submitter"]) for t in recent_tracks],
+            )
             trigger_generation(recent_tracks, peeked, estimated_play_time, submitter_pronouns)
 
     return {"ok": True}
