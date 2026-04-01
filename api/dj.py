@@ -75,8 +75,12 @@ def _generate_script(
     ct_label: str,
     pt_label: str,
     submitter_pronouns: dict[str, str] | None = None,
-) -> str:
-    """Generate a DJ script using Gemini Flash Lite."""
+) -> tuple[str, str]:
+    """Generate a DJ script using Gemini Flash Lite.
+
+    Returns (tts_ready_script, ad_text) where ad_text is extracted from
+    [AD]...[/AD] tags for storage in dj_last_script history.
+    """
     from google import genai  # type: ignore[import]
 
     api_key = os.environ.get("GOOGLE_API_KEY", "")
