@@ -296,6 +296,7 @@ def get_next_track() -> dict | None:
         pending_file = get_config("dj_pending_file")
         if pending_file and os.path.exists(pending_file):
             reserved_id = get_config("dj_reserved_track_id")
+            set_config("dj_playing_file", pending_file)
             set_config("dj_pending_file", "")
             set_config("dj_submitters_since_last_interlude", "0")
             set_config("last_returned_track_id", "")

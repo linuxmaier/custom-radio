@@ -3,6 +3,7 @@ import os
 from contextlib import asynccontextmanager
 
 from database import init_db
+from dj import cleanup_stale_dj_files
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from metrics import start_metrics_poller, stop_metrics_poller
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up %s API", _station_name)
     init_db()
     reset_stuck_jobs()
+    cleanup_stale_dj_files()
     start_worker()
     start_metrics_poller()
     yield

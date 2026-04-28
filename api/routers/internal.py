@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import UTC, datetime, timedelta
 
 from database import db, get_config, set_config
@@ -42,6 +43,14 @@ def track_started(track_id: str):
     # DJ interludes are not in the tracks table — handle them cleanly without a warning.
     if track_id == DJ_SENTINEL:
         logger.info("DJ interlude started playing")
+        playing_file = get_config("dj_playing_file")
+        if playing_file:
+            set_config("dj_playing_file", "")
+            try:
+                os.remove(playing_file)
+                logger.info("DJ: deleted played interlude file %s", playing_file)
+            except OSError:
+                logger.warning("DJ: could not delete interlude file %s", playing_file, exc_info=True)
         return {"ok": True}
 
     with db() as conn:
