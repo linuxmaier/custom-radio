@@ -29,6 +29,20 @@ def _dj_dir() -> str:
     return path
 
 
+def cleanup_stale_dj_files() -> None:
+    """Delete any dj/ files left over from previous runs (already played or abandoned)."""
+    keep = {get_config("dj_pending_file"), get_config("dj_playing_file")} - {""}
+    dj_dir = _dj_dir()
+    for fname in os.listdir(dj_dir):
+        fpath = os.path.join(dj_dir, fname)
+        if fpath not in keep:
+            try:
+                os.remove(fpath)
+                logger.info("DJ cleanup: removed stale file %s", fpath)
+            except OSError:
+                logger.warning("DJ cleanup: could not remove %s", fpath, exc_info=True)
+
+
 def _round_time_label(dt: datetime) -> str:
     """Return a natural time label rounded to the nearest quarter hour.
 
