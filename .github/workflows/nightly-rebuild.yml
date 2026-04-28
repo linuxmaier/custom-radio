@@ -15,8 +15,8 @@ jobs:
         station:
           - name: maier
             instance_id: i-04cf8f3c771ae92c8
-          - name: barton
-            instance_id: i-06a19a026aefd4c7d
+          # Barton paused 2026-04-28 — instance terminated. Re-add an entry with the new
+          # instance_id if Barton is restored.
 
     steps:
       - name: Configure AWS credentials
