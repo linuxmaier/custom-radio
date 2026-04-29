@@ -103,6 +103,21 @@ CREATE TABLE IF NOT EXISTS passkey_challenges (
     type TEXT NOT NULL,
     expires_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS programs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS program_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    program_id INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+    track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_program_items_program ON program_items(program_id, position);
 """
 
 CONFIG_DEFAULTS = {
@@ -121,6 +136,9 @@ CONFIG_DEFAULTS = {
     "dj_interlude_just_played": "false",
     "dj_last_script": "",
     "dj_prev_script": "",
+    "active_program_id": "",
+    "program_current_position": "0",
+    "program_pending_position": "",
     "feature_min_tempo_bpm": "0",
     "feature_max_tempo_bpm": "1",
     "feature_min_rms_energy": "0",
@@ -181,6 +199,10 @@ def init_db():
             pass  # column already exists
         try:
             conn.execute("ALTER TABLE push_subscriptions ADD COLUMN user_id TEXT REFERENCES users(id)")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN in_rotation INTEGER NOT NULL DEFAULT 1")
         except sqlite3.OperationalError:
             pass  # column already exists
         # Backfill youtube_video_id from source_url for tracks submitted before this column existed

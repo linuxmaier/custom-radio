@@ -25,6 +25,7 @@ def _track_row_to_dict(row) -> dict:
         "submitted_at": row["submitted_at"],
         "ready_at": row["ready_at"],
         "comment": row["comment"],
+        "in_rotation": bool(row["in_rotation"]),
     }
 
 

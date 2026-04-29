@@ -27,24 +27,87 @@ class ConfigUpdate(BaseModel):
     rotation_tracks_per_block: int | None = None
     dj_enabled: bool | None = None
     dj_submitters_per_interlude: int | None = None
+    active_program_id: int | None = None
+
+
+def _resolved_active_program_id(update: ConfigUpdate) -> int | None:
+    if update.active_program_id is not None:
+        return update.active_program_id
+    raw = get_config("active_program_id")
+    return int(raw) if raw else None
+
+
+def _clear_dj_pending_state():
+    """Clear any in-flight DJ generation state. Used when entering programmed mode."""
+    pending_file = get_config("dj_pending_file")
+    if pending_file and os.path.exists(pending_file):
+        try:
+            os.unlink(pending_file)
+        except OSError:
+            pass
+    set_config("dj_pending_file", "")
+    set_config("dj_reserved_track_id", "")
+    set_config("dj_interlude_just_played", "false")
+    set_config("dj_generation_needed", "false")
 
 
 @router.get("/admin/config")
 def get_admin_config(auth=Depends(require_admin)):
+    active_program_id_raw = get_config("active_program_id")
+    active_program_id = int(active_program_id_raw) if active_program_id_raw else None
+    active_program_name = None
+    active_program_item_count = 0
+    if active_program_id:
+        with db() as conn:
+            row = conn.execute("SELECT name FROM programs WHERE id=?", (active_program_id,)).fetchone()
+            if row:
+                active_program_name = row["name"]
+                active_program_item_count = conn.execute(
+                    "SELECT COUNT(*) FROM program_items WHERE program_id=?", (active_program_id,)
+                ).fetchone()[0]
+            else:
+                active_program_id = None  # stale id; surface as cleared
     return {
         "programming_mode": get_config("programming_mode"),
         "rotation_tracks_per_block": int(get_config("rotation_tracks_per_block")),
         "rotation_current_submitter_idx": int(get_config("rotation_current_submitter_idx")),
         "dj_enabled": get_config("dj_enabled") == "true",
         "dj_submitters_per_interlude": int(get_config("dj_submitters_per_interlude") or "2"),
+        "active_program_id": active_program_id,
+        "active_program_name": active_program_name,
+        "active_program_item_count": active_program_item_count,
+        "program_current_position": int(get_config("program_current_position") or "0"),
     }
 
 
 @router.post("/admin/config")
 def update_admin_config(update: ConfigUpdate, auth=Depends(require_admin)):
     if update.programming_mode is not None:
-        if update.programming_mode not in ("rotation", "mood"):
-            raise HTTPException(400, "programming_mode must be 'rotation' or 'mood'")
+        if update.programming_mode not in ("rotation", "mood", "programmed"):
+            raise HTTPException(400, "programming_mode must be 'rotation', 'mood', or 'programmed'")
+
+        if update.programming_mode == "programmed":
+            pid = _resolved_active_program_id(update)
+            if not pid:
+                raise HTTPException(400, "active_program_id is required to switch to programmed mode")
+            with db() as conn:
+                program = conn.execute("SELECT id FROM programs WHERE id=?", (pid,)).fetchone()
+                if not program:
+                    raise HTTPException(400, f"Program {pid} not found")
+                item_count = conn.execute("SELECT COUNT(*) FROM program_items WHERE program_id=?", (pid,)).fetchone()[0]
+            if item_count == 0:
+                raise HTTPException(400, "Cannot activate an empty program")
+            set_config("active_program_id", str(pid))
+            set_config("program_current_position", "0")
+            set_config("program_pending_position", "")
+            _clear_dj_pending_state()
+        else:
+            # Switching away from programmed — clear program state.
+            if get_config("programming_mode") == "programmed":
+                set_config("active_program_id", "")
+                set_config("program_current_position", "0")
+                set_config("program_pending_position", "")
+
         set_config("programming_mode", update.programming_mode)
         logger.info(f"Programming mode set to: {update.programming_mode}")
 
@@ -75,6 +138,14 @@ def _liquidsoap_skip():
     # = flushed prefetch, last_played = the skipped track), triggering an early
     # submitter advance.
     set_config("last_returned_track_id", "")
+    # In programmed mode, the prefetched-but-not-yet-started item is about to be
+    # flushed by Liquidsoap. Roll the position back so the next pick returns it
+    # again — otherwise the program silently skips an item it never played.
+    if get_config("programming_mode") == "programmed":
+        pending = get_config("program_pending_position")
+        if pending:
+            set_config("program_current_position", pending)
+            set_config("program_pending_position", "")
     with socket.create_connection(("liquidsoap", 1234), timeout=5) as sock:
         sock.sendall(b"dynamic.flush_and_skip\nquit\n")
         sock.recv(1024)  # drain response
@@ -109,6 +180,26 @@ async def upload_youtube_cookies(file: UploadFile = File(...), auth=Depends(requ
         f.write(content)
     set_config("youtube_cookies_uploaded_at", datetime.now(UTC).isoformat())
     logger.info("YouTube cookies updated")
+    return {"ok": True}
+
+
+class TrackUpdate(BaseModel):
+    in_rotation: bool | None = None
+
+
+@router.patch("/admin/track/{track_id}")
+def update_track(track_id: str, update: TrackUpdate, auth=Depends(require_admin)):
+    """Update mutable per-track admin fields."""
+    with db() as conn:
+        row = conn.execute("SELECT id FROM tracks WHERE id=?", (track_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Track not found")
+        if update.in_rotation is not None:
+            conn.execute(
+                "UPDATE tracks SET in_rotation=? WHERE id=?",
+                (1 if update.in_rotation else 0, track_id),
+            )
+            logger.info(f"Track {track_id} in_rotation set to: {update.in_rotation}")
     return {"ok": True}
 
 
