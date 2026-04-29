@@ -17,7 +17,8 @@ COOLDOWN_WINDOW_S = 3600  # don't replay a track within 60 min
 def _total_ready_runtime_s() -> float:
     with db() as conn:
         return conn.execute(
-            "SELECT COALESCE(SUM(duration_s), 0) FROM tracks WHERE status='ready' AND duration_s IS NOT NULL"
+            "SELECT COALESCE(SUM(duration_s), 0) FROM tracks "
+            "WHERE status='ready' AND in_rotation=1 AND duration_s IS NOT NULL"
         ).fetchone()[0]
 
 
@@ -35,7 +36,7 @@ def _pick_global_fallback() -> dict | None:
         row = conn.execute(
             """
             SELECT t.id, t.title, t.artist, t.submitter, t.file_path FROM tracks t
-            WHERE t.status='ready' AND t.id != ? AND t.id != ?
+            WHERE t.status='ready' AND t.in_rotation=1 AND t.id != ? AND t.id != ?
             ORDER BY COALESCE(
                 (SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id), ''
             ) ASC, t.submitted_at ASC
@@ -47,7 +48,7 @@ def _pick_global_fallback() -> dict | None:
         if not row:  # truly last resort — allow any ready track
             row = conn.execute("""
                 SELECT t.id, t.title, t.artist, t.submitter, t.file_path FROM tracks t
-                WHERE t.status='ready'
+                WHERE t.status='ready' AND t.in_rotation=1
                 ORDER BY COALESCE(
                     (SELECT MAX(pl.played_at) FROM play_log pl WHERE pl.track_id=t.id), ''
                 ) ASC, t.submitted_at ASC
@@ -74,7 +75,9 @@ def _advance_for_dj():
     (caller resets dj_submitters_since_last_interlude directly).
     """
     with db() as conn:
-        rows = conn.execute("SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter").fetchall()
+        rows = conn.execute(
+            "SELECT DISTINCT submitter FROM tracks WHERE status='ready' AND in_rotation=1 ORDER BY submitter"
+        ).fetchall()
         submitters = [r["submitter"] for r in rows]
 
     if not submitters:
@@ -135,7 +138,7 @@ def is_penultimate_submitter_track(submitter: str, track_id: str) -> bool:
             remaining = conn.execute(
                 """
                 SELECT COUNT(*) FROM tracks
-                WHERE submitter = ? AND status = 'ready'
+                WHERE submitter = ? AND status = 'ready' AND in_rotation = 1
                   AND id != ?
                   AND id != ?
                   AND id NOT IN (SELECT track_id FROM play_log WHERE played_at > ?)
@@ -146,7 +149,7 @@ def is_penultimate_submitter_track(submitter: str, track_id: str) -> bool:
             remaining = conn.execute(
                 """
                 SELECT COUNT(*) FROM tracks
-                WHERE submitter = ? AND status = 'ready'
+                WHERE submitter = ? AND status = 'ready' AND in_rotation = 1
                   AND id != ?
                   AND id != ?
                 """,
@@ -177,7 +180,9 @@ def peek_next_submitter_track() -> dict | None:
     is found, rather than returning None and silently suppressing DJ generation.
     """
     with db() as conn:
-        rows = conn.execute("SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter").fetchall()
+        rows = conn.execute(
+            "SELECT DISTINCT submitter FROM tracks WHERE status='ready' AND in_rotation=1 ORDER BY submitter"
+        ).fetchall()
         submitters = [r["submitter"] for r in rows]
 
     if not submitters:
@@ -203,7 +208,7 @@ def peek_next_submitter_track() -> dict | None:
                            COUNT(pl.id) as play_count
                     FROM tracks t
                     LEFT JOIN play_log pl ON pl.track_id = t.id
-                    WHERE t.submitter=? AND t.status='ready'
+                    WHERE t.submitter=? AND t.status='ready' AND t.in_rotation=1
                       AND t.id != ?
                       AND t.id != ?
                       AND t.id NOT IN (SELECT track_id FROM play_log WHERE played_at > ?)
@@ -218,7 +223,7 @@ def peek_next_submitter_track() -> dict | None:
                            COUNT(pl.id) as play_count
                     FROM tracks t
                     LEFT JOIN play_log pl ON pl.track_id = t.id
-                    WHERE t.submitter=? AND t.status='ready'
+                    WHERE t.submitter=? AND t.status='ready' AND t.in_rotation=1
                       AND t.id != ?
                       AND t.id != ?
                     GROUP BY t.id
@@ -254,10 +259,17 @@ def get_next_track() -> dict | None:
     Main scheduling entry point. Returns a dict with id/title/artist/file_path
     for the next track to play, or None if nothing is ready.
 
-    Before normal scheduling, checks for a pending DJ interlude (dj_pending_file).
-    When an interlude is returned, the rotation is immediately advanced to the next
-    submitter so normal scheduling picks up correctly after the interlude plays.
+    Programmed mode short-circuits before the DJ block — programmed playlists
+    are fully static, so DJ interludes are suppressed entirely.
+
+    Otherwise, checks for a pending DJ interlude (dj_pending_file). When an interlude
+    is returned, the rotation is immediately advanced to the next submitter so normal
+    scheduling picks up correctly after the interlude plays.
     """
+    mode = get_config("programming_mode")
+    if mode == "programmed":
+        return _pick_programmed_track()
+
     if get_config("dj_enabled") == "true":
         # Step 1: interlude just played — return the reserved post-interlude track.
         # This is the only code path that consumes dj_reserved_track_id, so a skip
@@ -315,7 +327,6 @@ def get_next_track() -> dict | None:
                 "file_path": pending_file,
             }
 
-    mode = get_config("programming_mode")
     logger.info(f"Scheduling mode: {mode}")
 
     if mode == "mood":
@@ -324,10 +335,69 @@ def get_next_track() -> dict | None:
         return _pick_rotation_track()
 
 
+def _pick_programmed_track() -> dict | None:
+    """Play through the active program in order. Reverts to rotation at end-of-program."""
+    active_id_str = get_config("active_program_id")
+    if not active_id_str:
+        logger.warning("Programmed mode active but no active_program_id; reverting to rotation")
+        set_config("programming_mode", "rotation")
+        return _pick_rotation_track()
+
+    try:
+        active_id = int(active_id_str)
+    except ValueError:
+        logger.warning(f"Invalid active_program_id={active_id_str!r}; reverting to rotation")
+        set_config("programming_mode", "rotation")
+        set_config("active_program_id", "")
+        return _pick_rotation_track()
+
+    position = int(get_config("program_current_position") or "0")
+
+    with db() as conn:
+        items = conn.execute(
+            """
+            SELECT pi.position, t.id, t.title, t.artist, t.submitter, t.file_path, t.status
+            FROM program_items pi
+            JOIN tracks t ON pi.track_id = t.id
+            WHERE pi.program_id = ?
+            ORDER BY pi.position ASC
+            """,
+            (active_id,),
+        ).fetchall()
+
+    for idx in range(position, len(items)):
+        item = items[idx]
+        if item["status"] != "ready":
+            logger.info(
+                f"Programmed: skipping non-ready item at position {idx} (track {item['id']} status={item['status']})"
+            )
+            continue
+        set_config("program_current_position", str(idx + 1))
+        set_config("program_pending_position", str(idx))
+        set_config("last_returned_track_id", item["id"])
+        logger.info(f"Programmed: position {idx + 1}/{len(items)} — '{item['title']}' by {item['artist']}")
+        return {
+            "id": item["id"],
+            "title": item["title"],
+            "artist": item["artist"],
+            "submitter": item["submitter"],
+            "file_path": item["file_path"],
+        }
+
+    logger.info("Programmed: program complete; reverting to rotation mode")
+    set_config("programming_mode", "rotation")
+    set_config("active_program_id", "")
+    set_config("program_current_position", "0")
+    set_config("program_pending_position", "")
+    return _pick_rotation_track()
+
+
 def _pick_rotation_track(depth: int = 0) -> dict | None:
     """Round-robin through submitters, N tracks per block."""
     with db() as conn:
-        rows = conn.execute("SELECT DISTINCT submitter FROM tracks WHERE status='ready' ORDER BY submitter").fetchall()
+        rows = conn.execute(
+            "SELECT DISTINCT submitter FROM tracks WHERE status='ready' AND in_rotation=1 ORDER BY submitter"
+        ).fetchall()
         submitters = [r["submitter"] for r in rows]
 
     if not submitters:
@@ -400,7 +470,7 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
                        COUNT(pl.id) as play_count
                 FROM tracks t
                 LEFT JOIN play_log pl ON pl.track_id = t.id
-                WHERE t.submitter=? AND t.status='ready'
+                WHERE t.submitter=? AND t.status='ready' AND t.in_rotation=1
                   AND t.id != ?
                   AND t.id != ?
                   AND t.id NOT IN (SELECT track_id FROM play_log WHERE played_at > ?)
@@ -415,7 +485,7 @@ def _pick_rotation_track(depth: int = 0) -> dict | None:
                        COUNT(pl.id) as play_count
                 FROM tracks t
                 LEFT JOIN play_log pl ON pl.track_id = t.id
-                WHERE t.submitter=? AND t.status='ready'
+                WHERE t.submitter=? AND t.status='ready' AND t.in_rotation=1
                   AND t.id != ?
                   AND t.id != ?
                 GROUP BY t.id
@@ -498,7 +568,7 @@ def _pick_mood_track() -> dict | None:
     # Scales with library size so small libraries always have at least one candidate.
     with db() as conn:
         library_size = conn.execute(
-            "SELECT COUNT(*) FROM tracks WHERE status='ready' AND tempo_bpm IS NOT NULL"
+            "SELECT COUNT(*) FROM tracks WHERE status='ready' AND in_rotation=1 AND tempo_bpm IS NOT NULL"
         ).fetchone()[0]
 
     exclusion_count = min(max(library_size - 1, 0), 3)
@@ -510,7 +580,7 @@ def _pick_mood_track() -> dict | None:
             SELECT t.id, t.title, t.artist, t.submitter, t.file_path, t.tempo_bpm, t.rms_energy,
                    t.spectral_centroid, t.zero_crossing_rate
             FROM tracks t
-            WHERE t.status='ready' AND t.tempo_bpm IS NOT NULL
+            WHERE t.status='ready' AND t.in_rotation=1 AND t.tempo_bpm IS NOT NULL
               AND t.id NOT IN (
                   SELECT track_id FROM play_log
                   GROUP BY track_id

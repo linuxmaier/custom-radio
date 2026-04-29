@@ -68,6 +68,29 @@ def track_started(track_id: str):
 
     logger.info(f"track-started logged: {track_id}")
 
+    # In programmed mode, clear the pending-prefetch marker only if the just-started
+    # track is actually the item at the pending position. Without this match check,
+    # track-started for the *current* track can race with the prefetch (which sets
+    # pending) and clobber it — so a later skip wouldn't rewind to the flushed item.
+    if get_config("programming_mode") == "programmed":
+        pending_str = get_config("program_pending_position")
+        active_id_str = get_config("active_program_id")
+        if pending_str and active_id_str:
+            try:
+                pending_idx = int(pending_str)
+                active_id = int(active_id_str)
+            except ValueError:
+                pending_idx = None
+                active_id = None
+            if pending_idx is not None and active_id is not None:
+                with db() as conn:
+                    row = conn.execute(
+                        "SELECT track_id FROM program_items WHERE program_id=? AND position=?",
+                        (active_id, pending_idx),
+                    ).fetchone()
+                if row and row["track_id"] == track_id:
+                    set_config("program_pending_position", "")
+
     # DJ interlude generation trigger. dj_generation_needed is set by _advance() when
     # dj_submitters_since_last_interlude reaches threshold-1, meaning we've entered the
     # last submitter block before an interlude is due. We wait until the *penultimate*
