@@ -25,7 +25,8 @@ nginx/        nginx template configs:
 certbot/      Dockerfile extending certbot/certbot with docker-cli + reload-nginx.sh script
               (reload-nginx.sh finds the nginx container by its family-radio.service=nginx Docker
               label and sends nginx -s reload; called by the certbot --deploy-hook after renewal)
-scripts/      Host-level scripts (backup.sh — daily S3 backup)
+scripts/      Host-level scripts (backup.sh — daily S3 backup; nginx-update.sh — nightly
+              nginx edge image refresh, cron 04:00 America/Chicago via /etc/cron.d/radio-nginx-update)
 ```
 
 The `bgutil-provider` service uses the upstream `brainicism/bgutil-ytdlp-pot-provider` image (no local directory). It runs a Node.js HTTP server on port 4416 (internal Docker network only) that generates YouTube Proof of Origin (`po_token`) tokens. The `bgutil-ytdlp-pot-provider` pip package (installed in the api image) is the yt-dlp plugin that calls it automatically on each YouTube download.
