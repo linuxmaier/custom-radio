@@ -247,6 +247,23 @@ aws s3 cp s3://your-bucket/media/tracks/TRACK_ID.mp3 \
   /var/lib/docker/volumes/radio_media/_data/tracks/TRACK_ID.mp3
 ```
 
+## Maintenance
+
+### Nightly nginx refresh
+
+nginx is the only internet-facing service (it terminates TLS on 80/443), so its base image is kept current on a nightly schedule rather than only on manual deploys. `scripts/nginx-update.sh` pulls `nginx:alpine` and, only if a newer image was published, recreates the nginx container (verifying it serves afterward and pruning the old dangling image). It is idempotent and a no-op when already current; no other service is touched.
+
+```bash
+# Install the cron job (runs daily at 04:00 America/Chicago, DST-aware, as root)
+printf 'CRON_TZ=America/Chicago\n0 4 * * * root /path/to/radio/scripts/nginx-update.sh\n' > /etc/cron.d/radio-nginx-update
+
+# Trigger a manual run to verify
+/path/to/radio/scripts/nginx-update.sh
+tail /var/log/radio-nginx-update.log
+```
+
+The other base images (Icecast, bgutil-provider, certbot, liquidsoap) are not internet-facing and are refreshed during normal deploys, so they are intentionally left out of this nightly job.
+
 ## Email Alerts
 
 The API can send alert emails when a YouTube download fails with a bot-check error — so you know to upload fresh cookies without having to check the admin panel manually.
@@ -413,7 +430,8 @@ family-radio/
 │       ├── favicon.png     # browser tab icon (32×32)
 │       └── badge-96.png    # notification badge icon (96×96, transparent bg)
 └── scripts/
-    └── backup.sh               # daily backup script (DB + media; see Backups section)
+    ├── backup.sh               # daily backup script (DB + media; see Backups section)
+    └── nginx-update.sh         # nightly nginx edge image refresh (see Maintenance section)
 ```
 
 ## Development Choices
